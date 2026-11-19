@@ -38,7 +38,7 @@ export default function CoworkRegistration() {
               <span className="text-soft"> ({info.timeZone.replace("America/New_York", "Eastern Time")})</span>
             </p>
             <p className="text-soft">
-              {info.durationMinutes / 60} hours, {info.format === "virtual" ? "online. You will get the link after you sign up and pay." : `in person at ${info.location}`}. {info.priceCents === 0 ? "Free." : `${money(info.priceCents)} per person.`}
+              {info.durationMinutes / 60} hours, {info.format === "virtual" ? "online" : `in person at ${info.location}`}. {info.priceCents === 0 ? "Free." : `${money(info.priceCents)} per person.`}{info.format === "virtual" ? " You will get the meeting link after you sign up and pay." : ""}
             </p>
             <p className="mt-5 leading-relaxed">
               Make time for the business task you keep putting off. Join women who are starting a business, starting over, or changing direction. Bring one task, settle into focused work time, and leave with a next step.

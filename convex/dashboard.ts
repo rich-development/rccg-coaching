@@ -3,6 +3,10 @@ import { query } from "./_generated/server";
 import { requireTeam } from "./lib/auth";
 import { computeBalance } from "./lib/balance";
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-11-19" -> "Nov 19" */
+const nice = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}`;
+
 type Item = {
   kind: string;
   title: string;
@@ -120,7 +124,7 @@ export const today = query({
       next.push({
         kind: "Follow-up",
         title: `${c.followUpAction}`,
-        detail: `${c.preferredName}, due ${c.followUpDate}`,
+        detail: `${c.preferredName}, due ${nice(c.followUpDate!)}`,
         href: `/coach/clients/${c._id}`,
         urgent: c.followUpDate! < args.today,
       });
@@ -129,7 +133,7 @@ export const today = query({
       next.push({
         kind: "Your task",
         title: a.title,
-        detail: `${name.get(a.clientId) ?? "Client"}${a.dueDate ? `, due ${a.dueDate}` : ""}`,
+        detail: `${name.get(a.clientId) ?? "Client"}${a.dueDate ? `, due ${nice(a.dueDate)}` : ""}`,
         href: `/coach/clients/${a.clientId}?tab=actions`,
         urgent: !!a.dueDate && a.dueDate < args.today,
       });
@@ -194,7 +198,7 @@ export const today = query({
         next.push({
           kind: "Wrapping up",
           title: `${name.get(e.clientId) ?? "Client"} is near the end of ${e.serviceName}`,
-          detail: `${b.remaining} session${b.remaining === 1 ? "" : "s"} left${e.endDate ? `, ends ${e.endDate}` : ""}. Plan the completion review.`,
+          detail: `${b.remaining} session${b.remaining === 1 ? "" : "s"} left${e.endDate ? `, ends ${nice(e.endDate)}` : ""}. Plan the completion review.`,
           href: `/coach/clients/${e.clientId}?tab=engagement`,
         });
       }

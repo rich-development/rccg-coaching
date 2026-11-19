@@ -3,12 +3,14 @@
 import { useMutation, useQuery } from "convex/react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { CoworkingForm } from "@/components/coworking-form";
 import { Badge, Button, Empty, Field, Input, Loading, Modal, Panel, SafeLink, Select, useAct, useNotice } from "@/components/ui";
 import { dateTime, money } from "@/lib/format";
+
+const subscribeNothing = () => () => {};
 
 const AGENDA = [
   ["0 to 10", "Welcome. Explain the format and group expectations."],
@@ -33,10 +35,11 @@ export default function CoworkingDetail() {
   const notice = useNotice();
   const [editing, setEditing] = useState(false);
   const [person, setPerson] = useState({ name: "", email: "" });
+  const origin = useSyncExternalStore(subscribeNothing, () => window.location.origin, () => "");
   if (data === undefined || !settings) return <Loading />;
   if (data === null) return <Empty>This session was not found.</Empty>;
   const s = data.session;
-  const publicUrl = typeof window === "undefined" ? "" : `${window.location.origin}/cowork/${s.slug}`;
+  const publicUrl = origin ? `${origin}/cowork/${s.slug}` : "";
   const registered = data.roster.filter((r) => r.status === "registered");
   const waitlist = data.roster.filter((r) => r.status === "waitlist");
   const cancelled = data.roster.filter((r) => r.status === "cancelled");
@@ -74,65 +77,49 @@ export default function CoworkingDetail() {
             {registered.length === 0 ? (
               <Empty>No one has registered yet.</Empty>
             ) : (
-              <div className="-mx-4 -mt-4 overflow-x-auto">
-                <table className="w-full min-w-[44rem] text-left text-sm">
-                  <thead className="border-b border-line text-[13px] text-soft">
-                    <tr>
-                      <th className="px-4 py-2 font-medium">Here</th>
-                      <th className="px-2 py-2 font-medium">Participant</th>
-                      <th className="px-2 py-2 font-medium">Payment</th>
-                      <th className="px-2 py-2 font-medium">Her task today</th>
-                      <th className="px-2 py-2 font-medium">Progress she reported</th>
-                      <th className="px-2 py-2 font-medium">Coaching?</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {registered.map((r) => (
-                      <tr key={r._id} className="align-top">
-                        <td className="px-4 py-2.5">
-                          <input type="checkbox" aria-label={`${r.name} attended`} className="h-4 w-4 accent-[#1d4a43]" checked={r.attended === true} onChange={(e) => act(() => updateReg({ id: r._id, attended: e.target.checked }))} />
-                        </td>
-                        <td className="px-2 py-2.5">
-                          <div className="font-medium">{r.name}</div>
-                          <div className="text-[13px] text-soft">{r.email}</div>
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {r.timesAttended > 1 && <Badge tone="gold">Attended {r.timesAttended} times</Badge>}
-                            {r.clientId ? (
-                              <Link href={`/coach/clients/${r.clientId}`} className="text-[13px] text-pine underline underline-offset-2">{r.isCoachingClient ? "Coaching client" : "In records"}</Link>
-                            ) : (
-                              <button type="button" className="text-[13px] text-pine underline underline-offset-2" onClick={() => act(() => createClient({ fullName: r.name, preferredName: r.name.split(" ")[0], email: r.email, source: "Co-working" }), "Added to records as an inquiry")}>
-                                Add to records
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-2 py-2.5">
-                          <Select aria-label="Payment" className="!w-auto !py-1 text-[13px]" value={r.paymentStatus} onChange={(e) => act(() => updateReg({ id: r._id, paymentStatus: e.target.value as "paid" }), "Payment updated")}>
-                            <option value="unpaid">Unpaid</option>
-                            <option value="paid">Paid</option>
-                            <option value="waived">Waived</option>
-                            <option value="refunded">Refunded</option>
-                          </Select>
-                        </td>
-                        <td className="px-2 py-2.5">
-                          <Input aria-label="Chosen task" defaultValue={r.chosenTask ?? ""} className="!py-1 text-[13px]" maxLength={600} onBlur={(e) => e.target.value !== (r.chosenTask ?? "") && act(() => updateReg({ id: r._id, chosenTask: e.target.value }))} />
-                        </td>
-                        <td className="px-2 py-2.5">
-                          <Input aria-label="Reported progress" defaultValue={r.reportedProgress ?? ""} className="!py-1 text-[13px]" maxLength={1000} onBlur={(e) => e.target.value !== (r.reportedProgress ?? "") && act(() => updateReg({ id: r._id, reportedProgress: e.target.value }))} />
-                        </td>
-                        <td className="px-2 py-2.5">
-                          <label className="flex items-center gap-1.5 text-[13px]">
-                            <input type="checkbox" checked={r.interestedInCoaching === true} onChange={(e) => act(() => updateReg({ id: r._id, interestedInCoaching: e.target.checked }))} /> Interested
-                          </label>
-                          <button type="button" className="mt-1 text-[13px] text-clay underline underline-offset-2" onClick={() => act(() => updateReg({ id: r._id, status: "cancelled" }), "Registration cancelled")}>
-                            Cancel spot
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="-mx-4 -mt-4 divide-y divide-line">
+                {registered.map((r) => (
+                  <li key={r._id} className="px-4 py-3.5">
+                    <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+                      <label className="flex min-w-56 flex-1 cursor-pointer items-start gap-3">
+                        <input type="checkbox" aria-label={`${r.name} is here`} className="mt-1 h-5 w-5 accent-[#1d4a43]" checked={r.attended === true} onChange={(e) => act(() => updateReg({ id: r._id, attended: e.target.checked }))} />
+                        <span>
+                          <span className="block text-sm font-medium">{r.name}</span>
+                          <span className="block text-[13px] text-soft">{r.email}</span>
+                        </span>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {r.timesAttended > 1 && <Badge tone="gold">Attended {r.timesAttended} times</Badge>}
+                        <Select aria-label={`Payment for ${r.name}`} className="!w-auto !py-1 text-[13px]" value={r.paymentStatus} onChange={(e) => act(() => updateReg({ id: r._id, paymentStatus: e.target.value as "paid" }), "Payment updated")}>
+                          <option value="unpaid">Unpaid</option>
+                          <option value="paid">Paid</option>
+                          <option value="waived">Waived</option>
+                          <option value="refunded">Refunded</option>
+                        </Select>
+                        <label className="flex items-center gap-1.5 text-[13px]">
+                          <input type="checkbox" checked={r.interestedInCoaching === true} onChange={(e) => act(() => updateReg({ id: r._id, interestedInCoaching: e.target.checked }))} /> Interested in coaching
+                        </label>
+                      </div>
+                    </div>
+                    <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+                      <Input aria-label={`Task ${r.name} chose`} placeholder="Her task today" defaultValue={r.chosenTask ?? ""} className="!py-1.5 text-[13px]" maxLength={600} onBlur={(e) => e.target.value !== (r.chosenTask ?? "") && act(() => updateReg({ id: r._id, chosenTask: e.target.value }))} />
+                      <Input aria-label={`Progress ${r.name} reported`} placeholder="Progress she chose to report" defaultValue={r.reportedProgress ?? ""} className="!py-1.5 text-[13px]" maxLength={1000} onBlur={(e) => e.target.value !== (r.reportedProgress ?? "") && act(() => updateReg({ id: r._id, reportedProgress: e.target.value }))} />
+                    </div>
+                    <div className="no-print mt-2 flex flex-wrap gap-x-4 text-[13px]">
+                      {r.clientId ? (
+                        <Link href={`/coach/clients/${r.clientId}`} className="text-pine underline underline-offset-2">{r.isCoachingClient ? "Coaching client: open her record" : "Open her record"}</Link>
+                      ) : (
+                        <button type="button" className="text-pine underline underline-offset-2" onClick={() => act(() => createClient({ fullName: r.name, preferredName: r.name.split(" ")[0], email: r.email, source: "Co-working" }), "Added to records as an inquiry")}>
+                          Add to records as an inquiry
+                        </button>
+                      )}
+                      <button type="button" className="text-clay underline underline-offset-2" onClick={() => act(() => updateReg({ id: r._id, status: "cancelled" }), "Registration cancelled")}>
+                        Cancel her spot
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
             <form
               className="no-print mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4"

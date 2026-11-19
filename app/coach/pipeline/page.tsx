@@ -99,7 +99,7 @@ function DiscoveryForm({ data, onClose }: { data: Detail; onClose: () => void })
         <Field label="Why this one"><Input value={v.recommendationReason} onChange={set("recommendationReason")} maxLength={2000} /></Field>
         {rec && (
           <p className="rounded-md bg-mist p-3 text-[13px] text-soft sm:col-span-2">
-            &ldquo;Based on what you shared, I recommend {rec.name} because {v.recommendationReason || "[specific need]"}. It includes {rec.description.charAt(0).toLowerCase() + rec.description.slice(1)} It costs {rec.priceNote}. Would you like the written details so you can decide?&rdquo;
+            &ldquo;Based on what you shared, I recommend {rec.name} because {v.recommendationReason ? v.recommendationReason.charAt(0).toLowerCase() + v.recommendationReason.slice(1).replace(/\.$/, "") : "[specific need]"}. It includes {rec.description.charAt(0).toLowerCase() + rec.description.slice(1)} It costs {rec.priceNote}. Would you like the written details so you can decide?&rdquo;
           </p>
         )}
         <Field label="Where this stands">

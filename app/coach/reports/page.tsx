@@ -161,7 +161,7 @@ export default function ReportsPage() {
           ) : (
             <>
               <p className="mb-3 text-[13px] text-soft">
-                Of {r.followThrough.due} commitments that came due: {r.followThrough.completed} completed ({r.followThrough.onTime} on time), {r.followThrough.revised} revised, {r.followThrough.dropped} no longer needed, {r.followThrough.stillOpen} still open. A revised commitment is a healthy sign, not a failure.
+                Of {r.followThrough.due} {r.followThrough.due === 1 ? "commitment" : "commitments"} that came due: {r.followThrough.completed} completed ({r.followThrough.onTime} on time), {r.followThrough.revised} revised, {r.followThrough.dropped} no longer needed, {r.followThrough.stillOpen} still open. A revised commitment is a healthy sign, not a failure.
               </p>
               <table className="w-full text-left text-sm">
                 <thead className="text-[13px] text-soft">

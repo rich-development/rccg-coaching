@@ -85,7 +85,7 @@ export const demo = internalMutation({
       recordingPermission: "granted",
       transcriptionPermission: "granted",
       aiPermission: "granted",
-      goal: "Describe her offer clearly and hold five customer conversations",
+      goal: "Describe the offer clearly and hold five customer conversations",
       measureName: "Customer conversations held",
       measureStart: "0",
       measureTarget: "5",
