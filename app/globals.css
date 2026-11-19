@@ -1,26 +1,96 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --font-display: "Marcellus", "Iowan Old Style", Georgia, serif;
+  --font-sans: "Albert Sans Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink: #1c1a17;
+  --color-soft: #5d584f;
+  --color-faint: #8b857a;
+  --color-line: #e4e0d6;
+  --color-mist: #f5f4f1;
+  --color-paper: #ffffff;
+
+  --color-gold-50: #fbf8ee;
+  --color-gold-100: #f4ecd2;
+  --color-gold-300: #dcc479;
+  --color-gold-500: #b8963e;
+  --color-gold-700: #7d6224;
+
+  --color-pine: #1d4a43;
+  --color-pine-dark: #143530;
+  --color-pine-50: #e8f1ef;
+
+  --color-clay: #9c3a2b;
+  --color-clay-50: #fbeeeb;
+  --color-moss: #2f6b4f;
+  --color-moss-50: #e9f3ed;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-mist);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+h1,
+h2,
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.005em;
+}
+
+/* The gold underline from Tamika's signature, used once per page under the title. */
+.swash {
+  display: block;
+  width: 7.5rem;
+  height: 0.5rem;
+  margin-top: 0.35rem;
+  background: no-repeat left center / 100% 100%
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 8' preserveAspectRatio='none'%3E%3Cpath d='M1 7C30 1.5 80 0.5 119 3.2 80 2.2 34 3.4 1 7Z' fill='%23b8963e'/%3E%3C/svg%3E");
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-pine);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+textarea {
+  field-sizing: content;
+}
+
+dialog::backdrop {
+  background: rgb(20 18 12 / 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media print {
+  aside,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
 }

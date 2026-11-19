@@ -302,7 +302,7 @@ describe("co-working", () => {
     // Structural check: the transcripts table can only point at one-on-one sessions.
     const fields = schema.tables.transcripts.validator.fields;
     expect(Object.keys(fields).sort()).toEqual(["attachedAt", "clientId", "sessionId", "source", "text"]);
-    expect(JSON.stringify(fields.sessionId.json)).toContain('"sessions"');
+    expect(fields.sessionId.tableName).toBe("sessions");
     expect(Object.keys(schema.tables.coworkingRegistrations.validator.fields)).not.toContain("transcript");
     expect(Object.keys(schema.tables.coworkingSessions.validator.fields)).not.toContain("transcript");
   });
