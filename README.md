@@ -50,12 +50,13 @@ regenerates `convex/_generated/`. Commit whatever it changes there.
 4. Give Convex the same two Clerk values:
 
 ```bash
-npx convex env set CLERK_JWT_ISSUER_DOMAIN https://YOUR-APP.clerk.accounts.dev
+npx convex env set CLERK_FRONTEND_API_URL https://YOUR-APP.clerk.accounts.dev
 npx convex env set CLERK_SECRET_KEY sk_test_...
 ```
 
-5. Mark the owner. In the Clerk dashboard, open Tamika's user (and yours),
-   and set **public metadata** to:
+5. Mark the owner. In the Clerk dashboard, go to **Users**, click Tamika's
+   user (then repeat for yours), scroll down to the **Metadata** section,
+   click **Edit** next to **Public**, paste this, and save:
 
 ```json
 { "role": "owner" }
@@ -96,7 +97,7 @@ address. The loader refuses to run if real client records already exist.
 On Netlify, set the build command to `npx convex deploy --cmd 'npm run build'`
 and add these environment variables: `CONVEX_DEPLOY_KEY` (from the Convex
 dashboard), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and
-`NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`. Set `CLERK_JWT_ISSUER_DOMAIN` and
+`NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`. Set `CLERK_FRONTEND_API_URL` and
 `CLERK_SECRET_KEY` on the production Convex deployment too, plus `SITE_URL`
 so invitation links point at the live site.
 
