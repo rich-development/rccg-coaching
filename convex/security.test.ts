@@ -1,15 +1,50 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
-const COACH = { subject: "coach1", issuer: "https://clerk.test", tokenIdentifier: "https://clerk.test|coach1", email: "tamika@example.com", emailVerified: true, name: "Tamika Rich" };
-const STAFF = { subject: "staff1", issuer: "https://clerk.test", tokenIdentifier: "https://clerk.test|staff1", email: "helper@example.com", emailVerified: true, name: "Helper" };
-const ANA = { subject: "ana1", issuer: "https://clerk.test", tokenIdentifier: "https://clerk.test|ana1", email: "ana@example.com", emailVerified: true, name: "Ana" };
-const BEA = { subject: "bea1", issuer: "https://clerk.test", tokenIdentifier: "https://clerk.test|bea1", email: "bea@example.com", emailVerified: true, name: "Bea" };
+// A stand-in for Clerk's Backend API. The app asks it who each sign-in is.
+type FakeUser = { email: string; verified: boolean; owner?: boolean };
+let clerk: Record<string, FakeUser> = {};
+let clerkCalls: string[] = [];
+const who = (id: string) => ({ subject: id, issuer: "https://clerk.test", tokenIdentifier: `https://clerk.test|${id}` });
+const COACH = who("user_coach");
+const STAFF = who("user_staff");
+const ANA = who("user_ana");
+const BEA = who("user_bea");
+
+function fakeClerk(url: string | URL | Request, init?: RequestInit): Response {
+  const path = String(url).replace("https://api.clerk.com/v1", "");
+  clerkCalls.push(`${init?.method ?? "GET"} ${path}`);
+  const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
+  const user = path.match(/^\/users\/(user_\w+)$/);
+  if (user) {
+    const u = clerk[user[1]];
+    if (!u) return json({ errors: [{ code: "resource_not_found" }] }, 404);
+    return json({
+      id: user[1],
+      first_name: u.email.split("@")[0],
+      primary_email_address_id: "e1",
+      email_addresses: [{ id: "e1", email_address: u.email, verification: { status: u.verified ? "verified" : "unverified" } }],
+      public_metadata: u.owner ? { role: "owner" } : {},
+    });
+  }
+  if (path === "/invitations") return json({ id: "inv_1" });
+  if (path.startsWith("/sessions?")) return json([{ id: "sess_1" }, { id: "sess_2" }]);
+  if (/^\/sessions\/sess_\d\/revoke$/.test(path)) return json({ status: "revoked" });
+  return json({}, 500);
+}
+
+type Session = { action: (fn: never, args: never) => Promise<unknown>; query: (fn: never, args: never) => Promise<unknown> };
+/** Signs in: the app checks with Clerk, then reports the role it gave. */
+async function roleOf(session: unknown): Promise<string> {
+  const s = session as Session;
+  await s.action(api.users.sync as never, {} as never);
+  return ((await s.query(api.users.me as never, {} as never)) as { role: string }).role;
+}
 
 const SECRET_NOTE = "PRIVATE-NOTE-do-not-leak";
 const SECRET_DRAFT = "DRAFT-RECAP-do-not-leak";
@@ -17,17 +52,25 @@ const SECRET_TRANSCRIPT = "TRANSCRIPT-do-not-leak";
 const TODAY = new Date().toISOString().slice(0, 10);
 
 beforeEach(() => {
-  process.env.COACH_EMAILS = "tamika@example.com";
+  process.env.CLERK_SECRET_KEY = "sk_test_fake";
+  clerkCalls = [];
+  clerk = {
+    user_coach: { email: "tamika@example.com", verified: true, owner: true },
+    user_staff: { email: "helper@example.com", verified: true },
+    user_ana: { email: "ana@example.com", verified: true },
+    user_bea: { email: "bea@example.com", verified: true },
+  };
+  vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => fakeClerk(url, init));
   delete process.env.ANTHROPIC_API_KEY;
 });
 
 async function setup() {
   const t = convexTest(schema, modules);
   const coach = t.withIdentity(COACH);
-  await coach.mutation(api.users.ensure, {});
+  await coach.action(api.users.sync, {});
   const mk = async (name: string, email: string) => {
     const clientId = await coach.mutation(api.clients.create, { fullName: name, preferredName: name, email });
-    await coach.mutation(api.clients.setPortalAccess, { id: clientId, enabled: true });
+    await coach.mutation(api.access.setClientAccess, { id: clientId, access: "active" });
     const engagementId = await coach.mutation(api.engagements.create, { clientId, serviceKey: "structure", startDate: TODAY });
     await coach.mutation(api.engagements.setPermissions, { id: engagementId, recordingPermission: "granted", transcriptionPermission: "granted", aiPermission: "granted" });
     const sessionId = await coach.mutation(api.sessions.schedule, { engagementId, scheduledAt: Date.now() - 3600_000, format: "virtual", meetLink: "https://meet.google.com/abc" });
@@ -45,8 +88,8 @@ async function setup() {
   const bea = await mk("Bea", "bea@example.com");
   const asAna = t.withIdentity(ANA);
   const asBea = t.withIdentity(BEA);
-  expect((await asAna.mutation(api.users.ensure, {})).role).toBe("client");
-  expect((await asBea.mutation(api.users.ensure, {})).role).toBe("client");
+  expect(await roleOf(asAna)).toBe("client");
+  expect(await roleOf(asBea)).toBe("client");
   return { t, coach, ana, bea, asAna, asBea };
 }
 
@@ -60,17 +103,19 @@ describe("sign-in and roles", () => {
     expect(await t.query(api.users.me, {})).toBeNull();
   });
 
-  test("an unverified email never gets the coach role", async () => {
+  test("sharing the owner email does not make someone an owner", async () => {
     const t = convexTest(schema, modules);
-    const fake = t.withIdentity({ ...COACH, subject: "x", tokenIdentifier: "https://clerk.test|x", emailVerified: false });
-    expect((await fake.mutation(api.users.ensure, {})).role).toBe("none");
+    clerk.user_x = { email: "tamika@example.com", verified: true }; // same email, not marked owner in Clerk
+    const fake = t.withIdentity(who("user_x"));
+    expect(await roleOf(fake)).toBe("none");
     await expect(fake.query(api.clients.list, {})).rejects.toThrow();
   });
 
   test("a stranger with no client record gets nothing", async () => {
     const { t } = await setup();
-    const stranger = t.withIdentity({ ...ANA, subject: "s", tokenIdentifier: "https://clerk.test|s", email: "nobody@example.com" });
-    expect((await stranger.mutation(api.users.ensure, {})).role).toBe("none");
+    clerk.user_s = { email: "nobody@example.com", verified: true };
+    const stranger = t.withIdentity(who("user_s"));
+    expect(await roleOf(stranger)).toBe("none");
     await expect(stranger.query(api.portal.home, {})).rejects.toThrow();
     await expect(stranger.query(api.clients.list, {})).rejects.toThrow();
   });
@@ -78,24 +123,26 @@ describe("sign-in and roles", () => {
   test("a client's email must be verified before her portal links", async () => {
     const t = convexTest(schema, modules);
     const coach = t.withIdentity(COACH);
-    await coach.mutation(api.users.ensure, {});
+    await coach.action(api.users.sync, {});
     const id = await coach.mutation(api.clients.create, { fullName: "Cee", preferredName: "Cee", email: "cee@example.com" });
-    await coach.mutation(api.clients.setPortalAccess, { id, enabled: true });
-    const unverified = t.withIdentity({ subject: "c", issuer: "https://clerk.test", tokenIdentifier: "https://clerk.test|c", email: "cee@example.com", emailVerified: false });
-    expect((await unverified.mutation(api.users.ensure, {})).role).toBe("none");
+    await coach.mutation(api.access.setClientAccess, { id, access: "active" });
+    clerk.user_c = { email: "cee@example.com", verified: false };
+    const unverified = t.withIdentity(who("user_c"));
+    expect(await roleOf(unverified)).toBe("none");
   });
 
   test("a second sign-in cannot take over a linked client record", async () => {
     const { t, asAna } = await setup();
-    const imposter = t.withIdentity({ ...ANA, subject: "ana2", tokenIdentifier: "https://other.test|ana2" });
-    expect((await imposter.mutation(api.users.ensure, {})).role).toBe("none");
+    clerk.user_ana2 = { email: "ana@example.com", verified: true };
+    const imposter = t.withIdentity(who("user_ana2"));
+    expect(await roleOf(imposter)).toBe("none");
     await expect(imposter.query(api.portal.home, {})).rejects.toThrow();
     expect((await asAna.query(api.portal.home, {})).preferredName).toBe("Ana");
   });
 
   test("turning off portal access locks the client out right away", async () => {
     const { coach, ana, asAna } = await setup();
-    await coach.mutation(api.clients.setPortalAccess, { id: ana.clientId, enabled: false });
+    await coach.mutation(api.access.setClientAccess, { id: ana.clientId, access: "paused" });
     await expect(asAna.query(api.portal.home, {})).rejects.toThrow();
   });
 });
@@ -134,11 +181,11 @@ describe("client portal isolation", () => {
     await expect(asAna.query(api.messages.thread, { clientId: bea.clientId })).rejects.toThrow();
     await expect(asAna.query(api.briefs.prep, { sessionId: ana.sessionId, today: TODAY })).rejects.toThrow();
     await expect(asAna.mutation(api.clients.exportRecord, { id: ana.clientId })).rejects.toThrow();
-    await expect(asAna.mutation(api.clients.setPortalAccess, { id: bea.clientId, enabled: true })).rejects.toThrow();
+    await expect(asAna.mutation(api.access.setClientAccess, { id: bea.clientId, access: "active" })).rejects.toThrow();
     await expect(asAna.mutation(api.engagements.recordPayment, { id: ana.engagementId, status: "paid", amountPaidCents: 69500 })).rejects.toThrow();
     await expect(asAna.query(api.dashboard.today, { dayStart: 0, dayEnd: 1, today: TODAY })).rejects.toThrow();
     await expect(asAna.query(api.coworking.list, {})).rejects.toThrow();
-    await expect(asAna.mutation(api.settings.addStaff, { email: "ana@example.com", name: "Ana" })).rejects.toThrow();
+    await expect(asAna.mutation(api.access.addMember, { email: "ana@example.com", name: "Ana", role: "admin" })).rejects.toThrow();
   });
 
   test("a message reference to someone else's record is dropped", async () => {
@@ -160,9 +207,9 @@ describe("client portal isolation", () => {
 describe("staff limits", () => {
   test("staff can run operations but cannot see private notes, transcripts, drafts, reports, or exports", async () => {
     const { t, coach, ana } = await setup();
-    await coach.mutation(api.settings.addStaff, { email: STAFF.email, name: "Helper" });
+    await coach.mutation(api.access.addMember, { email: "helper@example.com", name: "Helper", role: "staff" });
     const staff = t.withIdentity(STAFF);
-    expect((await staff.mutation(api.users.ensure, {})).role).toBe("staff");
+    expect(await roleOf(staff)).toBe("staff");
     expect((await staff.query(api.clients.list, {})).length).toBe(2);
     const ws = await staff.query(api.sessions.workspace, { id: ana.sessionId });
     const dump = JSON.stringify([ws, await staff.query(api.clients.get, { id: ana.clientId })]);
@@ -174,9 +221,9 @@ describe("staff limits", () => {
     await expect(staff.query(api.briefs.prep, { sessionId: ana.sessionId, today: TODAY })).rejects.toThrow();
     await expect(staff.query(api.reports.overview, { from: 0, to: Date.now(), today: TODAY })).rejects.toThrow();
     await expect(staff.mutation(api.clients.exportRecord, { id: ana.clientId })).rejects.toThrow();
-    await expect(staff.mutation(api.clients.setPortalAccess, { id: ana.clientId, enabled: false })).rejects.toThrow();
-    await expect(staff.mutation(api.settings.addStaff, { email: "x@example.com", name: "x" })).rejects.toThrow();
-    await coach.mutation(api.settings.setStaffActive, { id: (await coach.query(api.settings.team, {}))[0]._id, active: false });
+    await expect(staff.mutation(api.access.setClientAccess, { id: ana.clientId, access: "paused" })).rejects.toThrow();
+    await expect(staff.mutation(api.access.addMember, { email: "x@example.com", name: "x", role: "staff" })).rejects.toThrow();
+    await coach.mutation(api.access.setMemberStatus, { id: (await coach.query(api.access.overview, {})).members[0]._id, status: "paused" });
     await expect(staff.query(api.clients.list, {})).rejects.toThrow();
   });
 });
@@ -312,14 +359,14 @@ describe("first-release acceptance check", () => {
   test("one full coaching cycle without re-entering decisions", async () => {
     const t = convexTest(schema, modules);
     const coach = t.withIdentity(COACH);
-    await coach.mutation(api.users.ensure, {});
+    await coach.action(api.users.sync, {});
     const clientId = await coach.mutation(api.clients.create, { fullName: "Ana Lee", preferredName: "Ana", email: "ana@example.com" });
-    await coach.mutation(api.clients.setPortalAccess, { id: clientId, enabled: true });
+    await coach.mutation(api.access.setClientAccess, { id: clientId, access: "active" });
     const engagementId = await coach.mutation(api.engagements.create, { clientId, serviceKey: "structure", startDate: TODAY, goal: "Hold five customer conversations" });
     // Assign intake
     const intakeId = await coach.mutation(api.assessments.assign, { clientId, kind: "intake", engagementId });
     const ana = t.withIdentity(ANA);
-    await ana.mutation(api.users.ensure, {});
+    await ana.action(api.users.sync, {});
     await ana.mutation(api.portal.submitAssessment, {
       id: intakeId,
       answers: { preferred_name: "Ana", stage: "Starting", outcome: "A clear offer", obstacle: "Pricing", tried: "Posting", hours: "5", resources: "Friends", limits: "Evenings" },
@@ -364,6 +411,7 @@ describe("first-release acceptance check", () => {
     const t = convexTest(schema, modules);
     expect(await t.mutation(internal.seed.demo, {})).toContain("Loaded");
     const coach = t.withIdentity(COACH);
+    await coach.action(api.users.sync, {});
     expect((await coach.query(api.clients.list, {})).length).toBe(4);
     const renee = (await coach.query(api.clients.list, {})).find((c) => c.preferredName === "Renee")!;
     const detail = (await coach.query(api.clients.get, { id: renee._id }))!;
@@ -372,5 +420,105 @@ describe("first-release acceptance check", () => {
     expect(prep.changed.some((c) => c.text.includes("explaining my offer was difficult"))).toBe(true);
     await t.mutation(internal.seed.clearDemo, {});
     expect((await coach.query(api.clients.list, {})).length).toBe(0);
+  });
+});
+
+describe("access management", () => {
+  test("invite, pause, restore, and end a client's access", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity(COACH);
+    await owner.action(api.users.sync, {});
+    const id = await owner.mutation(api.clients.create, { fullName: "Ana Lee", preferredName: "Ana", email: "ana@example.com" });
+    const ana = t.withIdentity(ANA);
+    // Before any invitation she gets nothing, even with a verified matching email.
+    expect(await roleOf(ana)).toBe("none");
+    // Invite: only this click sends an email.
+    expect(clerkCalls.some((c) => c === "POST /invitations")).toBe(false);
+    const invited = await owner.action(api.access.invite, { kind: "client", id, origin: "https://coaching.example.com" });
+    expect(invited.note).toContain("Invitation email sent");
+    expect(clerkCalls.filter((c) => c === "POST /invitations").length).toBe(1);
+    const state = async () => (await owner.query(api.access.overview, {})).clients.find((c) => c._id === id)!;
+    expect((await state()).access).toBe("invited");
+    expect(await roleOf(ana)).toBe("client");
+    expect((await state()).access).toBe("active");
+    // Pause: blocked on the very next request, with no new sign-in needed.
+    await owner.mutation(api.access.setClientAccess, { id, access: "paused" });
+    await expect(ana.query(api.portal.home, {})).rejects.toThrow();
+    expect((await ana.query(api.users.me, {}))!.blocked).toBe("paused");
+    // Restore.
+    await owner.mutation(api.access.setClientAccess, { id, access: "active" });
+    expect((await ana.query(api.portal.home, {})).preferredName).toBe("Ana");
+    // End: blocked, signed out everywhere in Clerk, record kept.
+    const ended = await owner.action(api.access.end, { kind: "client", id });
+    expect(ended.note).toContain("2 active sign-ins closed");
+    expect(clerkCalls.filter((c) => /^POST \/sessions\/sess_\d\/revoke$/.test(c)).length).toBe(2);
+    await expect(ana.query(api.portal.home, {})).rejects.toThrow();
+    expect(await roleOf(ana)).toBe("none"); // signing in again does not bring access back
+    expect((await ana.query(api.users.me, {}))!.blocked).toBe("ended");
+    expect((await owner.query(api.clients.get, { id }))!.client.fullName).toBe("Ana Lee");
+  });
+
+  test("permissions follow the role and change right away", async () => {
+    const { t, coach: owner, ana } = await setup();
+    const memberId = await owner.mutation(api.access.addMember, { email: "helper@example.com", name: "Helper", role: "staff" });
+    const staff = t.withIdentity(STAFF);
+    expect(await roleOf(staff)).toBe("staff");
+    // Default staff: payments yes, private coaching material no.
+    await staff.mutation(api.engagements.recordPayment, { id: ana.engagementId, status: "paid", amountPaidCents: 69500 });
+    await expect(staff.mutation(api.sessions.saveNotes, { id: ana.sessionId, obstacle: "x" })).rejects.toThrow();
+    await owner.mutation(api.access.setRolePermissions, { role: "staff", permissions: ["coaching"] });
+    await staff.mutation(api.sessions.saveNotes, { id: ana.sessionId, obstacle: "now allowed" });
+    await expect(staff.mutation(api.engagements.recordPayment, { id: ana.engagementId, status: "paid", amountPaidCents: 1 })).rejects.toThrow();
+    // Promote to admin: everything, including the Access page.
+    await owner.mutation(api.access.setMemberRole, { id: memberId, role: "admin" });
+    expect((await staff.query(api.users.me, {}))!.role).toBe("admin");
+    expect((await staff.query(api.access.overview, {})).members.length).toBe(1);
+    // Pause the team member: locked out at once.
+    await owner.mutation(api.access.setMemberStatus, { id: memberId, status: "paused" });
+    await expect(staff.query(api.clients.list, {})).rejects.toThrow();
+    expect((await staff.query(api.users.me, {}))!.blocked).toBe("paused");
+  });
+
+  test("nobody can raise their own access, and only owners manage admins", async () => {
+    const { t, coach: owner } = await setup();
+    const adminId = await owner.mutation(api.access.addMember, { email: "helper@example.com", name: "Helper", role: "admin" });
+    const admin = t.withIdentity(STAFF);
+    expect(await roleOf(admin)).toBe("admin");
+    // An admin can manage staff and clients...
+    const staffId = await admin.mutation(api.access.addMember, { email: "new@example.com", name: "New", role: "staff" });
+    await admin.mutation(api.access.setMemberStatus, { id: staffId, status: "paused" });
+    // ...but cannot touch herself, other admins, or the admin role.
+    await expect(admin.mutation(api.access.setMemberRole, { id: adminId, role: "staff" })).rejects.toThrow();
+    await expect(admin.mutation(api.access.setMemberStatus, { id: adminId, status: "paused" })).rejects.toThrow();
+    await expect(admin.action(api.access.end, { kind: "member", id: adminId })).rejects.toThrow();
+    await expect(admin.mutation(api.access.addMember, { email: "x@example.com", name: "X", role: "admin" })).rejects.toThrow();
+    await expect(admin.mutation(api.access.setMemberRole, { id: staffId, role: "admin" })).rejects.toThrow();
+    await expect(admin.mutation(api.access.setRolePermissions, { role: "admin", permissions: [] })).rejects.toThrow();
+    // An admin without a permission cannot hand it to staff.
+    await owner.mutation(api.access.setRolePermissions, { role: "admin", permissions: ["access"] });
+    await expect(admin.mutation(api.access.setRolePermissions, { role: "staff", permissions: ["reports"] })).rejects.toThrow();
+    // Staff without the access permission cannot open the Access page at all.
+    await owner.mutation(api.access.setMemberRole, { id: adminId, role: "staff" });
+    await expect(admin.query(api.access.overview, {})).rejects.toThrow();
+  });
+
+  test("the owner mark comes only from Clerk and is rechecked", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity(COACH);
+    expect(await roleOf(owner)).toBe("owner");
+    clerk.user_coach.owner = false; // removed in the Clerk dashboard
+    expect(await roleOf(owner)).toBe("none");
+    await expect(owner.query(api.clients.list, {})).rejects.toThrow();
+  });
+
+  test("without the Clerk key nobody is let in, and the reason is reported", async () => {
+    delete process.env.CLERK_SECRET_KEY;
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity(COACH);
+    const result = await owner.action(api.users.sync, {});
+    expect(result.ok).toBe(false);
+    expect(result.problem).toContain("CLERK_SECRET_KEY");
+    expect((await owner.query(api.users.me, {}))!.role).toBe("none");
+    await expect(owner.query(api.clients.list, {})).rejects.toThrow();
   });
 });

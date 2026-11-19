@@ -3,8 +3,10 @@
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
+import { AccessBadge, AccessControls } from "@/components/access-controls";
 import { ClientForm } from "@/components/client/client-form";
-import { Badge, Button, Field, Input, KeyValue, Modal, Panel, SafeLink, Select, useAct, Visibility } from "@/components/ui";
+import { useCan } from "@/components/role";
+import { Button, Field, Input, KeyValue, Modal, Panel, SafeLink, Select, useAct, Visibility } from "@/components/ui";
 import { downloadFile, isoLabel, PIPELINE, shortDate, STAGE_LABEL, todayIso } from "@/lib/format";
 import type { Detail } from "./types";
 
@@ -13,8 +15,8 @@ export function Overview({ data, isCoach }: { data: Detail; isCoach: boolean }) 
   const update = useMutation(api.clients.update);
   const setFollowUp = useMutation(api.clients.setFollowUp);
   const setStage = useMutation(api.clients.setPipelineStage);
-  const setPortal = useMutation(api.clients.setPortalAccess);
-  const resetLink = useMutation(api.clients.resetPortalLink);
+  const canAccess = useCan("access");
+  const canExport = useCan("export");
   const setArchived = useMutation(api.clients.setArchived);
   const exportRecord = useMutation(api.clients.exportRecord);
   const services = useQuery(api.library.services, {});
@@ -122,31 +124,19 @@ export function Overview({ data, isCoach }: { data: Detail; isCoach: boolean }) 
           </div>
         </Panel>
 
-        <Panel title="Client portal">
-          <div className="mb-3 flex flex-wrap gap-2">
-            {c.portalEnabled ? <Badge tone="moss">Access is on</Badge> : <Badge>Access is off</Badge>}
-            {data.portalLinked ? <Badge tone="pine">She has signed in</Badge> : c.portalEnabled ? <Badge tone="gold">Waiting for her first sign-in</Badge> : null}
-          </div>
+        <Panel title="Client portal" aside={<AccessBadge state={c.access} invitationSent={!!c.inviteSentAt} />}>
           <p className="mb-3 text-[13px] text-soft">
-            When access is on, she can sign in with <strong className="text-ink">{c.email}</strong> and see only her own appointments, commitments, approved recaps, assigned work, and messages.
+            With access on, she signs in with <strong className="text-ink">{c.email}</strong> and sees only her own appointments, commitments, approved recaps, assigned work, and messages.
           </p>
-          {isCoach ? (
-            <div className="flex flex-wrap gap-2">
-              <Button small tone={c.portalEnabled ? "danger" : "primary"} disabled={busy} onClick={() => act(() => setPortal({ id: c._id, enabled: !c.portalEnabled }), c.portalEnabled ? "Portal access turned off" : "Portal access turned on")}>
-                {c.portalEnabled ? "Turn off access" : "Turn on access"}
-              </Button>
-              {data.portalLinked && (
-                <Button small disabled={busy} onClick={() => act(() => resetLink({ id: c._id }), "Sign-in link reset")}>
-                  Reset her sign-in link
-                </Button>
-              )}
-            </div>
+          {canAccess ? (
+            <AccessControls kind="client" id={c._id} state={c.access} signedIn={data.portalLinked} name={c.preferredName} disabled={c.archived} invitationSent={!!c.inviteSentAt} />
           ) : (
-            <p className="text-[13px] text-soft">Only Tamika can change portal access.</p>
+            <p className="text-[13px] text-soft">Your role does not include managing access.</p>
           )}
+          {c.accessNote && <p className="mt-3 text-[13px] text-soft">{c.accessNote}</p>}
         </Panel>
 
-        {isCoach && (
+        {canExport && (
           <Panel title="Record">
             <div className="flex flex-wrap gap-2">
               <Button

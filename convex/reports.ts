@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireCoach } from "./lib/auth";
+import { requirePermission } from "./lib/auth";
 import { readSettings } from "./settings";
 
 const DAY = 86400_000;
@@ -18,7 +18,7 @@ const pct = (part: number, whole: number) => (whole === 0 ? null : Math.round((p
 export const overview = query({
   args: { from: v.number(), to: v.number(), today: v.string() },
   handler: async (ctx, args) => {
-    await requireCoach(ctx);
+    await requirePermission(ctx, "reports");
     const settings = await readSettings(ctx);
     const inRange = (t: number | undefined) => t !== undefined && t >= args.from && t <= args.to;
     const clients = await ctx.db.query("clients").collect();
@@ -266,7 +266,7 @@ export const overview = query({
 export const engagementRows = query({
   args: {},
   handler: async (ctx) => {
-    await requireCoach(ctx);
+    await requirePermission(ctx, "reports");
     const clients = await ctx.db.query("clients").collect();
     const engagements = await ctx.db.query("engagements").collect();
     const sessions = await ctx.db.query("sessions").collect();

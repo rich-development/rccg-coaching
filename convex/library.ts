@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { fieldDef } from "./schema";
-import { bad, logActivity, notFound, requireCoach, requireTeam, text } from "./lib/auth";
+import { bad, logActivity, notFound, requirePermission, requireTeam, text } from "./lib/auth";
 import { ASSESSMENT_KINDS, DISCOVERY_GUIDE } from "./lib/defaults";
 
 export const services = query({
@@ -28,7 +28,7 @@ export const saveService = mutation({
     active: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "settings");
     const row = await ctx.db.get(args.id);
     if (!row) notFound("Service");
     if (args.priceCents < 0 || args.priceCents > 10_000_00) bad("Check the price.");
@@ -67,7 +67,7 @@ export const saveWorksheet = mutation({
     active: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "settings");
     const row = await ctx.db.get(args.id);
     if (!row) notFound("Worksheet");
     if (args.fields.length === 0 || args.fields.length > 30) bad("A worksheet needs 1 to 30 questions.");
@@ -93,7 +93,7 @@ export const templates = query({
 export const saveTemplate = mutation({
   args: { id: v.id("messageTemplates"), name: v.string(), subject: v.string(), body: v.string() },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "settings");
     const row = await ctx.db.get(args.id);
     if (!row) notFound("Template");
     await ctx.db.patch(args.id, {

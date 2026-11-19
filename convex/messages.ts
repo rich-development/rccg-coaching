@@ -75,8 +75,7 @@ export const send = mutation({
     if (/\[[^\]]{2,60}\]/.test(body)) {
       bad("This message still has a [bracketed] placeholder. Fill it in before sending.");
     }
-    const settings = await readSettings(ctx);
-    await postMessage(ctx, args.clientId, "coach", viewer.role === "coach" ? settings.coachName : viewer.name, body, args.ref);
+    await postMessage(ctx, args.clientId, "coach", viewer.name, body, args.ref);
     await logActivity(ctx, viewer, "message.sent", `Sent a message to ${client.preferredName}`, args.clientId);
   },
 });

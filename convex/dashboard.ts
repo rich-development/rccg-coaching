@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { requireTeam } from "./lib/auth";
+import { can, requireTeam } from "./lib/auth";
 import { computeBalance } from "./lib/balance";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -157,7 +157,7 @@ export const today = query({
           href: `/coach/sessions/${s._id}`,
           urgent: true,
         });
-      } else if (s.status === "completed" && !s.recapShared && viewer.role === "coach" && (s.completedAt ?? 0) > now - 30 * 86400_000) {
+      } else if (s.status === "completed" && !s.recapShared && can(viewer, "coaching") && (s.completedAt ?? 0) > now - 30 * 86400_000) {
         next.push({
           kind: "Recap",
           title: `Review and share the recap for ${name.get(s.clientId) ?? "client"}`,
@@ -165,7 +165,7 @@ export const today = query({
           href: `/coach/sessions/${s._id}`,
         });
       }
-      if (s.status === "completed" && s.transcriptStatus === "pending" && viewer.role === "coach") {
+      if (s.status === "completed" && s.transcriptStatus === "pending" && can(viewer, "coaching")) {
         next.push({
           kind: "Transcript",
           title: `Transcript pending for ${name.get(s.clientId) ?? "client"}, session ${s.number}`,

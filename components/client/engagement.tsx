@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Empty, Field, Input, KeyValue, Meter, Modal, Panel, SafeLink, Select, TextArea, useAct, Visibility } from "@/components/ui";
 import { isoLabel, money, todayIso, words } from "@/lib/format";
+import { useCan } from "@/components/role";
 import type { Detail, Engagement } from "./types";
 
 type Permission = "not_asked" | "granted" | "declined";
@@ -361,6 +362,7 @@ function Completion({ e, onRenew }: { e: Engagement; onRenew: () => void }) {
 }
 
 export function EngagementTab({ data, isCoach }: { data: Detail; isCoach: boolean }) {
+  const canPay = useCan("payments");
   const toggle = useMutation(api.engagements.toggleChecklist);
   const setStatus = useMutation(api.engagements.setStatus);
   const { act, busy } = useAct();
@@ -435,8 +437,8 @@ export function EngagementTab({ data, isCoach }: { data: Detail; isCoach: boolea
               </ul>
               {e.status === "onboarding" && <p className="mt-3 text-[13px] text-soft">The engagement becomes active when every step is done.</p>}
             </Panel>
-            <Terms key={`t${e._id}`} e={e} isCoach={isCoach} />
-            <PaymentPanel key={`p${e._id}`} e={e} />
+            <Terms key={`t${e._id}`} e={e} isCoach={canPay} />
+            {canPay && <PaymentPanel key={`p${e._id}`} e={e} />}
             <Goal key={`g${e._id}`} e={e} />
             {isCoach && <Permissions key={`m${e._id}`} e={e} />}
             {isCoach && <Completion key={`c${e._id}`} e={e} onRenew={() => setStarting({ previous: e })} />}

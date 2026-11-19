@@ -47,17 +47,27 @@ regenerates `convex/_generated/`. Commit whatever it changes there.
 1. Create a Clerk application (email sign-in is enough).
 2. In Clerk, turn on the Convex integration. Copy the **Frontend API URL**.
 3. Add the Clerk keys to `.env.local` (see `.env.example`).
-4. Tell Convex about Clerk and about Tamika:
+4. Give Convex the same two Clerk values:
 
 ```bash
 npx convex env set CLERK_JWT_ISSUER_DOMAIN https://YOUR-APP.clerk.accounts.dev
-npx convex env set COACH_EMAILS tamika@her-real-email.com
+npx convex env set CLERK_SECRET_KEY sk_test_...
 ```
 
-`COACH_EMAILS` is what makes someone the coach. It is checked on every request
-against a verified email, so nobody can promote themselves from inside the app.
-Use a comma to list more than one address. Clerk must require email
-verification (it does by default).
+5. Mark the owner. In the Clerk dashboard, open Tamika's user (and yours),
+   and set **public metadata** to:
+
+```json
+{ "role": "owner" }
+```
+
+That is the only access setup outside the app. There are no email lists in
+Convex. Because the owner mark lives on the Clerk user, every Convex
+deployment that uses this Clerk application recognizes the owner with no
+extra step.
+
+Optional: set Clerk's sign-up mode to invitation only, so strangers cannot
+create accounts at all. Without it, a stranger can sign up but sees nothing.
 
 ### 3. Run it
 
@@ -65,8 +75,11 @@ verification (it does by default).
 npm run dev
 ```
 
-Sign in with the coach email. The Starter Kit services, workbook pages, and
-message templates load on the first coach sign-in.
+Sign in as an owner. The Starter Kit services, workbook pages, and message
+templates load on the first owner sign-in. If you land on "Your page is not
+open yet", open **What the app sees** on that screen. It shows the email
+Clerk reported, whether it is verified, whether the owner mark was found, and
+the reason access was not given.
 
 ### 4. Optional: sample data
 
@@ -84,7 +97,8 @@ On Netlify, set the build command to `npx convex deploy --cmd 'npm run build'`
 and add these environment variables: `CONVEX_DEPLOY_KEY` (from the Convex
 dashboard), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and
 `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`. Set `CLERK_JWT_ISSUER_DOMAIN` and
-`COACH_EMAILS` on the production Convex deployment too.
+`CLERK_SECRET_KEY` on the production Convex deployment too, plus `SITE_URL`
+so invitation links point at the live site.
 
 ### 6. Optional: AI drafting (this one costs money)
 
@@ -102,20 +116,42 @@ Each draft is one API call billed to the Anthropic account behind the key.
 Names, business names, emails, and phone numbers are removed before anything is
 sent. Without a key, the preparation brief built from the record still works.
 
-## Opening a client's portal
+## Managing access
 
-1. Add the client with the email she will sign in with.
-2. On her record, turn on portal access.
-3. She signs in at the site with that email. Her sign-in links to her record
-   the first time, and only if Clerk has verified the email.
+Everything is on the **Access** page (and on each client's record).
+
+| Who | How they get in | Managed where |
+|---|---|---|
+| Owner | Public metadata `{ "role": "owner" }` on the Clerk user | Clerk dashboard |
+| Admin, Staff | Added on the Access page, then invited | In the app |
+| Client | Invited from her record or the Access page | In the app |
+
+**Clients:** Send invitation (Clerk emails her, only on that click), Give
+access without an email, Pause, Restore, End. Pause blocks her portal on her
+next click and keeps everything. End also signs her out everywhere. Her record
+is kept either way. Pausing access is separate from pausing an engagement.
+
+**Roles and permissions:** permissions belong to the role. The matrix on the
+Access page has six switches: private coaching material, reports and revenue,
+payments and agreed terms, export and archive, manage access, settings and
+library. Day-to-day work is always included for the team.
+
+**Guardrails:** nobody can change their own access. Only an owner can add,
+change, or end an admin, or change what admins can do. An admin cannot give
+staff a permission the admin role lacks. Every change is in the history.
 
 ## Security model
 
 All access rules live in Convex, in `convex/lib/auth.ts`. The browser is never
 trusted.
 
-- **Every function checks who is asking first:** `requireCoach`,
-  `requireTeam`, or `requireClient`.
+- **Clerk proves identity. The app asks Clerk directly.** After sign-in,
+  `users.sync` calls Clerk's Backend API from the server for the user's
+  verified email and owner mark. The only thing read from the sign-in token is
+  the Clerk user id, so nothing depends on custom token claims.
+- **Every function checks who is asking first:** `requirePermission`,
+  `requireTeam`, or `requireClient`. Roles, permissions, and access status
+  are read from the database on every request, so changes apply immediately.
 - **Clients can only use `convex/portal.ts`.** Those functions never accept a
   client id. They look up the record that belongs to the signed-in person, and
   they return hand-picked fields.
@@ -143,9 +179,10 @@ Run the security and acceptance tests any time:
 npm test
 ```
 
-They cover client-to-client isolation, private notes and transcripts, staff
-limits, unverified emails, session balance rules, permission gates, co-working
-privacy, and the first-release acceptance check end to end.
+They cover client-to-client isolation, private notes and transcripts, role
+permissions, invite, pause, restore, and end, the guardrails against raising
+your own access, unverified emails, session balance rules, consent gates,
+co-working privacy, and the first-release acceptance check end to end.
 
 ## What is linked by hand for now
 
@@ -177,7 +214,8 @@ app/portal/     Client portal
 app/cowork/     Public co-working registration
 components/     Shared interface pieces
 convex/         Database schema and every server function
-convex/lib/     Access control, defaults from the Starter Kit and Workbook
+convex/lib/     Access control, Clerk server calls, Starter Kit and Workbook defaults
+convex/access.ts            Team, roles, permissions, client portal access
 convex/portal.ts            The only functions a client can call
 convex/security.test.ts     Security and acceptance tests
 scripts/gen-convex-api.mjs  Writes convex/_generated without a deployment

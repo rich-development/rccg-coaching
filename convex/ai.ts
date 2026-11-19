@@ -1,7 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { requireCoachInAction } from "./lib/auth";
 
 /**
  * Optional AI drafting. Costs money per use, so it only runs when ALL of
@@ -45,7 +44,7 @@ export const draft = action({
     today: v.string(),
   },
   handler: async (ctx, args): Promise<null> => {
-    await requireCoachInAction(ctx);
+    await ctx.runQuery(internal.access.assertCan, { permission: "coaching" });
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) {
       throw new ConvexError({ code: "NO_KEY", message: "AI drafting needs an API key added to Convex." });

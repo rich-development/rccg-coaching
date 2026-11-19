@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
-import { bad, logActivity, notFound, requireCoach, text } from "./lib/auth";
+import { bad, logActivity, notFound, requirePermission, text } from "./lib/auth";
 
 const PLACEMENTS = ["Website", "Social media", "Printed materials", "Other materials"];
 
@@ -17,7 +17,7 @@ export const draftTestimonial = mutation({
     request: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const client = await ctx.db.get(args.clientId);
     if (!client) notFound("Client");
     const quote = text(args.quote, 1500, "Quote");
@@ -43,7 +43,7 @@ export const draftTestimonial = mutation({
 export const recordTestimonialAnswer = mutation({
   args: { id: v.id("testimonials"), granted: v.boolean() },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const t = await ctx.db.get(args.id);
     if (!t) notFound("Testimonial");
     await ctx.db.patch(args.id, { status: args.granted ? "granted" : "declined", respondedAt: Date.now() });

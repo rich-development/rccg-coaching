@@ -4,8 +4,7 @@ import {
   bad,
   link,
   logActivity,
-  normalizeEmail,
-  requireCoach,
+  requirePermission,
   requireTeam,
   text,
 } from "./lib/auth";
@@ -67,7 +66,7 @@ export const update = mutation({
     aiEnabled: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "settings");
     await ensureDefaults(ctx);
     const row = await ctx.db
       .query("settings")
@@ -93,59 +92,10 @@ export const update = mutation({
   },
 });
 
-export const team = query({
-  args: {},
-  handler: async (ctx) => {
-    await requireCoach(ctx);
-    return await ctx.db.query("teamMembers").collect();
-  },
-});
-
-export const addStaff = mutation({
-  args: { email: v.string(), name: v.string() },
-  handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
-    const email = normalizeEmail(text(args.email, 200, "Email"));
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) bad("Enter a valid email.");
-    const existing = await ctx.db
-      .query("teamMembers")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, { active: true, name: text(args.name, 120) });
-    } else {
-      await ctx.db.insert("teamMembers", {
-        email,
-        name: text(args.name, 120, "Name"),
-        role: "staff",
-        active: true,
-        addedAt: Date.now(),
-      });
-    }
-    await logActivity(ctx, viewer, "team.added", `Gave staff access to ${email}`);
-  },
-});
-
-export const setStaffActive = mutation({
-  args: { id: v.id("teamMembers"), active: v.boolean() },
-  handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
-    const member = await ctx.db.get(args.id);
-    if (!member) return;
-    await ctx.db.patch(args.id, { active: args.active });
-    await logActivity(
-      ctx,
-      viewer,
-      "team.changed",
-      `${args.active ? "Restored" : "Removed"} staff access for ${member.email}`,
-    );
-  },
-});
-
 export const activity = query({
   args: { clientId: v.optional(v.id("clients")), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    await requireCoach(ctx);
+    await requirePermission(ctx, "access");
     const limit = Math.min(args.limit ?? 100, 300);
     if (args.clientId) {
       return await ctx.db

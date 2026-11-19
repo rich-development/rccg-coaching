@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internalMutation, internalQuery, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireCoach } from "./lib/auth";
+import { requirePermission } from "./lib/auth";
 import { computeBalance } from "./lib/balance";
 import { readSettings } from "./settings";
 
@@ -217,7 +217,7 @@ function suggestWorksheet(g: Awaited<ReturnType<typeof gather>>) {
 export const prep = query({
   args: { sessionId: v.id("sessions"), today: v.string() },
   handler: async (ctx, args) => {
-    await requireCoach(ctx);
+    await requirePermission(ctx, "coaching");
     const g = await gather(ctx, args.sessionId, args.today);
     const settings = await readSettings(ctx);
     const balance = computeBalance(g.engagement, g.sessions.filter((s) => s.engagementId === g.engagement._id));
@@ -296,7 +296,7 @@ function deidentify(input: string, client: Doc<"clients">): string {
 export const aiContext = internalQuery({
   args: { sessionId: v.id("sessions"), kind: v.union(v.literal("prep"), v.literal("recap")), today: v.string() },
   handler: async (ctx, args) => {
-    await requireCoach(ctx);
+    await requirePermission(ctx, "coaching");
     const settings = await readSettings(ctx);
     if (!settings.aiEnabled) throw new ConvexError({ code: "AI_OFF", message: "AI drafting is turned off in Settings." });
     const g = await gather(ctx, args.sessionId, args.today);
@@ -391,7 +391,7 @@ export const saveBrief = internalMutation({
     model: v.string(),
   },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     await ctx.db.insert("aiBriefs", { ...args, createdAt: Date.now() });
     await ctx.db.insert("activity", {
       at: Date.now(),

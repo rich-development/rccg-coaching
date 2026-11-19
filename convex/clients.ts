@@ -10,7 +10,8 @@ import {
   normalizeEmail,
   notFound,
   optText,
-  requireCoach,
+  can,
+  requirePermission,
   requireTeam,
   text,
   type Viewer,
@@ -19,7 +20,7 @@ import { computeBalance } from "./lib/balance";
 
 /** Staff do not see the private folder link. */
 function forViewer(client: Doc<"clients">, viewer: Viewer) {
-  if (viewer.role === "coach") return client;
+  if (can(viewer, "coaching")) return client;
   const { privateFolderUrl: _hidden, ...rest } = client;
   void _hidden;
   return rest;
@@ -61,7 +62,7 @@ export const list = query({
           archived: c.archived,
           followUpAction: c.followUpAction,
           followUpDate: c.followUpDate,
-          portalEnabled: c.portalEnabled,
+          access: c.access,
           portalLinked: c.userId !== undefined,
           engagementCount: mine.length,
           currentService: current?.serviceName,
@@ -146,7 +147,7 @@ export const get = query({
         .sort((a, b) => b.scheduledAt - a.scheduledAt)
         .map((s) => {
           // The recap draft is the coach's working copy.
-          if (viewer.role === "coach") return s;
+          if (can(viewer, "coaching")) return s;
           const { recapDraft: _d, ...rest } = s;
           void _d;
           return rest;
@@ -156,8 +157,8 @@ export const get = query({
       assessments: assessments.sort((a, b) => b.assignedAt - a.assignedAt),
       coworking: coworking.sort((a, b) => b.startsAt - a.startsAt),
       thread,
-      feedback: viewer.role === "coach" ? feedback : [],
-      testimonials: viewer.role === "coach" ? testimonials : [],
+      feedback: can(viewer, "coaching") ? feedback : [],
+      testimonials: can(viewer, "coaching") ? testimonials : [],
     };
   },
 });
@@ -234,7 +235,7 @@ export const create = mutation({
       ...profile,
       pipelineStage: "inquiry",
       pipelineChangedAt: now,
-      portalEnabled: false,
+      access: "none",
       archived: false,
       createdAt: now,
     });
@@ -258,7 +259,7 @@ export const update = mutation({
       if (other && other._id !== id) bad("Another client already uses that email.");
     }
     const patch: Partial<Doc<"clients">> = { ...profile };
-    if (viewer.role !== "coach") {
+    if (!can(viewer, "coaching")) {
       // Staff cannot change the private folder link.
       patch.privateFolderUrl = client.privateFolderUrl;
     }
@@ -266,7 +267,7 @@ export const update = mutation({
       // A changed email breaks the sign-in link on purpose. Access must be re-granted.
       await ctx.db.patch(client.userId, { clientId: undefined });
       patch.userId = undefined;
-      patch.portalEnabled = false;
+      patch.access = "none";
     }
     await ctx.db.patch(id, patch);
     await logActivity(ctx, viewer, "client.updated", `Updated ${profile.preferredName}'s record`, id);
@@ -352,51 +353,15 @@ export const setFollowUp = mutation({
   },
 });
 
-/** Only the coach decides who can sign in to a portal. */
-export const setPortalAccess = mutation({
-  args: { id: v.id("clients"), enabled: v.boolean() },
-  handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
-    const client = await ctx.db.get(args.id);
-    if (!client) notFound("Client");
-    await ctx.db.patch(args.id, { portalEnabled: args.enabled });
-    await logActivity(
-      ctx,
-      viewer,
-      "portal.access",
-      `${args.enabled ? "Turned on" : "Turned off"} portal access for ${client.preferredName}`,
-      args.id,
-    );
-  },
-});
-
-/** Unlinks the current sign-in so the client can link again with her email. */
-export const resetPortalLink = mutation({
-  args: { id: v.id("clients") },
-  handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
-    const client = await ctx.db.get(args.id);
-    if (!client) notFound("Client");
-    if (client.userId) {
-      const user = await ctx.db.get(client.userId);
-      if (user && user.clientId === args.id) {
-        await ctx.db.patch(user._id, { clientId: undefined });
-      }
-    }
-    await ctx.db.patch(args.id, { userId: undefined });
-    await logActivity(ctx, viewer, "portal.reset", `Reset the portal sign-in link for ${client.preferredName}`, args.id);
-  },
-});
-
 export const setArchived = mutation({
   args: { id: v.id("clients"), archived: v.boolean() },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "export");
     const client = await ctx.db.get(args.id);
     if (!client) notFound("Client");
     await ctx.db.patch(args.id, {
       archived: args.archived,
-      ...(args.archived ? { portalEnabled: false } : {}),
+      ...(args.archived && client.access !== "none" ? { access: "ended" as const, accessChangedAt: Date.now() } : {}),
     });
     await logActivity(
       ctx,
@@ -412,7 +377,7 @@ export const setArchived = mutation({
 export const exportRecord = mutation({
   args: { id: v.id("clients") },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "export");
     const client = await ctx.db.get(args.id);
     if (!client) notFound("Client");
     const id = args.id;

@@ -7,26 +7,29 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Suspense, useEffect, type ReactNode } from "react";
 import { api } from "@/convex/_generated/api";
-import { useViewer } from "@/components/gate";
+import { isTeamRole, useViewer } from "@/components/gate";
+import type { PermissionKey } from "@/components/role";
 import { Loading, NoticeProvider } from "@/components/ui";
 
-const NAV = [
+type NavItem = { href: string; label: string; exact?: boolean; needs?: PermissionKey };
+const NAV: NavItem[] = [
   { href: "/coach", label: "Today", exact: true },
   { href: "/coach/clients", label: "Clients" },
   { href: "/coach/pipeline", label: "Discovery" },
   { href: "/coach/inbox", label: "Messages" },
   { href: "/coach/coworking", label: "Co-working" },
-  { href: "/coach/reports", label: "Reports", coachOnly: true },
+  { href: "/coach/reports", label: "Reports", needs: "reports" },
   { href: "/coach/library", label: "Library" },
-  { href: "/coach/settings", label: "Settings", coachOnly: true },
+  { href: "/coach/access", label: "Access", needs: "access" },
+  { href: "/coach/settings", label: "Settings", needs: "settings" },
 ];
 
-function Shell({ children, role, name }: { children: ReactNode; role: string; name: string }) {
+function Shell({ children, role, name, permissions }: { children: ReactNode; role: string; name: string; permissions: string[] }) {
   const path = usePathname();
   const inbox = useQuery(api.messages.inbox, {});
   const waiting = inbox?.filter((t) => t.status === "needs_reply").length ?? 0;
-  const items = NAV.filter((n) => !n.coachOnly || role === "coach");
-  const active = (n: (typeof NAV)[number]) => (n.exact ? path === n.href : path.startsWith(n.href));
+  const items = NAV.filter((n) => !n.needs || permissions.includes(n.needs));
+  const active = (n: NavItem) => (n.exact ? path === n.href : path.startsWith(n.href));
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[15rem_1fr]">
       <aside className="bg-black text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
@@ -59,7 +62,7 @@ function Shell({ children, role, name }: { children: ReactNode; role: string; na
           <UserButton />
           <div className="min-w-0 text-xs">
             <div className="truncate text-white">{name}</div>
-            <div className="text-white/55">{role === "coach" ? "Coach" : "Staff"}</div>
+            <div className="capitalize text-white/55">{role}</div>
           </div>
         </div>
       </aside>
@@ -75,14 +78,14 @@ function Shell({ children, role, name }: { children: ReactNode; role: string; na
 export default function CoachLayout({ children }: { children: ReactNode }) {
   const { loading, me } = useViewer();
   const router = useRouter();
-  const allowed = me?.role === "coach" || me?.role === "staff";
+  const allowed = isTeamRole(me?.role);
   useEffect(() => {
     if (!loading && !allowed) router.replace("/");
   }, [loading, allowed, router]);
   if (loading || !allowed || !me) return <Loading label="Opening your workspace" />;
   return (
     <NoticeProvider>
-      <Shell role={me.role} name={me.name}>
+      <Shell role={me.role} name={me.name} permissions={me.permissions}>
         {children}
       </Shell>
     </NoticeProvider>

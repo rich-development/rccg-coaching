@@ -4,9 +4,8 @@ import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
-import { useIsCoach } from "@/components/role";
+import { useCan } from "@/components/role";
 import { Badge, Button, Empty, Field, Input, Loading, PageTitle, Panel, useAct } from "@/components/ui";
-import { dateTime, words } from "@/lib/format";
 
 type Settings = FunctionReturnType<typeof api.settings.get>;
 
@@ -58,74 +57,16 @@ function PracticeForm({ s }: { s: Settings }) {
   );
 }
 
-function Team() {
-  const team = useQuery(api.settings.team, {});
-  const add = useMutation(api.settings.addStaff);
-  const setActive = useMutation(api.settings.setStaffActive);
-  const { act, busy } = useAct();
-  const [v, setV] = useState({ name: "", email: "" });
-  return (
-    <Panel title="Staff access">
-      <p className="mb-3 text-sm text-soft">Staff can manage records, bookings, payments, messages, and co-working. They cannot see private notes, transcripts, AI drafts, reports, or exports, and cannot change portal access or settings.</p>
-      {team && team.length > 0 && (
-        <ul className="mb-4 divide-y divide-line rounded-md border border-line">
-          {team.map((m) => (
-            <li key={m._id} className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
-              <span className="font-medium">{m.name}</span>
-              <span className="text-soft">{m.email}</span>
-              {m.active ? <Badge tone="moss">Active</Badge> : <Badge>Removed</Badge>}
-              <Button small tone={m.active ? "danger" : "quiet"} disabled={busy} className="ml-auto" onClick={() => act(() => setActive({ id: m._id, active: !m.active }), m.active ? "Access removed" : "Access restored")}>
-                {m.active ? "Remove access" : "Restore access"}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form className="flex flex-wrap items-end gap-3" onSubmit={async (e) => { e.preventDefault(); if (await act(() => add(v), "Staff access given")) setV({ name: "", email: "" }); }}>
-        <Field label="Name" className="min-w-40 flex-1"><Input required value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
-        <Field label="Sign-in email" className="min-w-52 flex-1"><Input required type="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} /></Field>
-        <Button type="submit" disabled={busy}>Give staff access</Button>
-      </form>
-    </Panel>
-  );
-}
-
 export default function SettingsPage() {
-  const isCoach = useIsCoach();
+  const allowed = useCan("settings");
   const settings = useQuery(api.settings.get, {});
-  const activity = useQuery(api.settings.activity, isCoach ? { limit: 150 } : "skip");
   if (!settings) return <Loading />;
-  if (!isCoach) return <Empty>Only Tamika can open settings.</Empty>;
+  if (!allowed) return <Empty>Your role does not include practice settings.</Empty>;
   return (
     <div>
-      <PageTitle title="Settings" sub="Practice details, connected tools, staff access, and a record of who did what." />
-      <div className="grid gap-5 xl:grid-cols-2">
-        <div className="space-y-5"><PracticeForm s={settings} /></div>
-        <div className="space-y-5">
-          <Team />
-          <Panel title="Who can see what">
-            <ul className="space-y-2 text-sm">
-              <li><span className="font-medium">Only you:</span> private session notes, transcripts, AI drafts, recap drafts, private folders, feedback, reports, exports.</li>
-              <li><span className="font-medium">You and staff:</span> client records, engagements, bookings, payments, commitments, workbook pages, assessments, messages, co-working rosters.</li>
-              <li><span className="font-medium">Each client:</span> only her own appointments and Meet links, commitments, assigned work, approved recaps, messages, session balance, and payment link.</li>
-              <li><span className="font-medium">The public:</span> only the registration page for an open co-working session. Never the meeting link or a roster.</li>
-            </ul>
-          </Panel>
-          <Panel title="Activity history">
-            {!activity || activity.length === 0 ? (
-              <Empty>Nothing recorded yet.</Empty>
-            ) : (
-              <ul className="max-h-[32rem] space-y-2 overflow-y-auto text-sm">
-                {activity.map((a) => (
-                  <li key={a._id}>
-                    <div>{a.summary}</div>
-                    <div className="text-xs text-faint">{dateTime(a.at)}, {a.actor} ({words(a.actorRole)})</div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-        </div>
+      <PageTitle title="Settings" sub="Practice details, connected tools, and AI drafting. People and permissions are on the Access page." />
+      <div className="grid max-w-3xl gap-5">
+        <PracticeForm s={settings} />
       </div>
     </div>
   );

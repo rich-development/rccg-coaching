@@ -8,7 +8,7 @@ import {
   logActivity,
   notFound,
   optText,
-  requireCoach,
+  requirePermission,
   requireTeam,
   text,
   today,
@@ -128,7 +128,7 @@ export const updateTerms = mutation({
     agreementUrl: v.optional(v.string()),
   },
   handler: async (ctx, { id, ...args }) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "payments");
     const e = await ctx.db.get(id);
     if (!e) notFound("Engagement");
     if (args.sessionsIncluded < 1 || args.sessionsIncluded > 60) bad("Check the session count.");
@@ -191,7 +191,7 @@ export const recordPayment = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const viewer = await requireTeam(ctx);
+    const viewer = await requirePermission(ctx, "payments");
     const e = await ctx.db.get(args.id);
     if (!e) notFound("Engagement");
     if (args.amountPaidCents < 0 || args.amountPaidCents > 10_000_00) bad("Check the amount.");
@@ -225,7 +225,7 @@ export const setPermissions = mutation({
     aiPermission: permission,
   },
   handler: async (ctx, { id, ...args }) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const e = await ctx.db.get(id);
     if (!e) notFound("Engagement");
     await ctx.db.patch(id, { ...args, permissionsUpdatedAt: Date.now() });
@@ -271,7 +271,7 @@ export const setStatus = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const e = await ctx.db.get(args.id);
     if (!e) notFound("Engagement");
     await ctx.db.patch(args.id, {
@@ -297,7 +297,7 @@ export const complete = mutation({
     markComplete: v.boolean(),
   },
   handler: async (ctx, { id, markComplete, ...args }) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const e = await ctx.db.get(id);
     if (!e) notFound("Engagement");
     await ctx.db.patch(id, {

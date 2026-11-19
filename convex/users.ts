@@ -1,8 +1,11 @@
-import { mutation, query } from "./_generated/server";
-import { getViewer, requireSignedIn } from "./lib/auth";
+import { ConvexError, v } from "convex/values";
+import { action, internalMutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { getViewer } from "./lib/auth";
+import { clerkConfigured, fetchClerkPerson } from "./lib/clerk";
 import { ensureDefaults } from "./settings";
 
-/** Who is signed in, and what they are allowed to see. */
+/** Who is signed in, and what they are allowed to do. */
 export const me = query({
   args: {},
   handler: async (ctx) => {
@@ -10,82 +13,129 @@ export const me = query({
     if (!viewer) return null;
     return {
       role: viewer.role,
+      permissions: viewer.permissions,
       name: viewer.role === "client" ? viewer.client!.preferredName : viewer.name,
       email: viewer.email,
       emailVerified: viewer.emailVerified,
-      registered: viewer.user !== null,
+      blocked: viewer.blocked,
+      // Shown on the "not open yet" screen so a setup problem explains itself.
+      diagnostics: {
+        synced: viewer.user !== null,
+        markedOwnerInClerk: viewer.user?.isOwner ?? false,
+        lastChecked: viewer.user?.syncedAt ?? null,
+      },
     };
   },
 });
 
 /**
- * Called once after sign-in. Stores the user and, for a client, links her
- * sign-in to her client record. Linking only happens when:
- *   - her email is verified by the sign-in provider,
- *   - Tamika has turned on portal access for a client with that exact email,
- *   - and that client record is not already linked to a different sign-in.
+ * Called after sign-in. Asks Clerk (server to server) who this user is and
+ * stores the answer. The browser cannot influence the result: the only input
+ * is the Clerk user id inside the verified sign-in token.
  */
-export const ensure = mutation({
+export const sync = action({
   args: {},
-  handler: async (ctx) => {
-    const viewer = await requireSignedIn(ctx);
+  handler: async (ctx): Promise<{ ok: boolean; problem: string | null }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Sign in first." });
+    if (!clerkConfigured()) {
+      return { ok: false, problem: "CLERK_SECRET_KEY is not set on the Convex deployment, so the app cannot confirm who you are." };
+    }
+    let person;
+    try {
+      person = await fetchClerkPerson(identity.subject);
+    } catch (e) {
+      console.error(e);
+      return { ok: false, problem: "Clerk did not answer. Try again in a moment." };
+    }
+    if (!person) return { ok: false, problem: "Clerk does not recognize this sign-in." };
+    await ctx.runMutation(internal.users.applySync, {
+      tokenIdentifier: identity.tokenIdentifier,
+      ...person,
+    });
+    return { ok: true, problem: null };
+  },
+});
+
+/** Internal only. Stores Clerk's answer and links the user to her record. */
+export const applySync = internalMutation({
+  args: {
+    tokenIdentifier: v.string(),
+    clerkUserId: v.string(),
+    email: v.string(),
+    emailVerified: v.boolean(),
+    name: v.string(),
+    isOwner: v.boolean(),
+  },
+  handler: async (ctx, args) => {
     const now = Date.now();
-    let user = viewer.user;
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_token", (q) => q.eq("tokenIdentifier", args.tokenIdentifier))
+      .unique();
+    const fields = {
+      clerkUserId: args.clerkUserId,
+      email: args.email,
+      emailVerified: args.emailVerified,
+      name: args.name,
+      isOwner: args.isOwner,
+      syncedAt: now,
+    };
     if (!user) {
-      const id = await ctx.db.insert("users", {
-        tokenIdentifier: viewer.tokenIdentifier,
-        email: viewer.email ?? "",
-        emailVerified: viewer.emailVerified,
-        name: viewer.name,
-        lastSeenAt: now,
-      });
+      const id = await ctx.db.insert("users", { tokenIdentifier: args.tokenIdentifier, ...fields });
       user = (await ctx.db.get(id))!;
-    } else if (
-      user.email !== (viewer.email ?? "") ||
-      user.emailVerified !== viewer.emailVerified ||
-      now - user.lastSeenAt > 60 * 60 * 1000
-    ) {
-      await ctx.db.patch(user._id, {
-        email: viewer.email ?? "",
-        emailVerified: viewer.emailVerified,
-        name: viewer.name,
-        lastSeenAt: now,
-      });
+    } else {
+      await ctx.db.patch(user._id, fields);
     }
 
-    if (viewer.role === "coach") {
+    if (args.isOwner) {
       await ensureDefaults(ctx);
-      return { role: "coach" as const };
+      return;
     }
-    if (viewer.role === "staff" || viewer.role === "client") {
-      return { role: viewer.role };
-    }
+    if (!args.emailVerified || !args.email) return;
 
-    if (viewer.email && viewer.emailVerified) {
-      const matches = await ctx.db
-        .query("clients")
-        .withIndex("by_email", (q) => q.eq("email", viewer.email!))
-        .collect();
-      const client = matches.find(
-        (c) =>
-          c.portalEnabled &&
-          !c.archived &&
-          (c.userId === undefined || c.userId === user!._id),
-      );
-      if (client) {
-        await ctx.db.patch(client._id, { userId: user._id });
-        await ctx.db.patch(user._id, { clientId: client._id });
+    // Team member: first sign-in claims the seat that was set up for this email.
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+    if (member) {
+      if (member.userId === undefined && (member.status === "invited" || member.status === "active")) {
+        await ctx.db.patch(member._id, { userId: user._id, status: "active" });
         await ctx.db.insert("activity", {
           at: now,
-          actor: client.preferredName,
-          actorRole: "client",
-          action: "portal.linked",
-          summary: `${client.preferredName} signed in to her portal for the first time`,
-          clientId: client._id,
+          actor: member.name,
+          actorRole: member.role,
+          action: "access.first_sign_in",
+          summary: `${member.name} signed in for the first time as ${member.role}`,
         });
-        return { role: "client" as const };
       }
+      return;
     }
-    return { role: "none" as const };
+
+    // Client: links only to a record with this exact verified email that has
+    // been given access and is not already linked to a different sign-in.
+    const matches = await ctx.db
+      .query("clients")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .collect();
+    const client = matches.find(
+      (c) =>
+        !c.archived &&
+        (c.access === "invited" || c.access === "active") &&
+        (c.userId === undefined || c.userId === user!._id),
+    );
+    if (client && (client.userId === undefined || client.access === "invited")) {
+      await ctx.db.patch(client._id, { userId: user._id, access: "active", accessChangedAt: now });
+      await ctx.db.patch(user._id, { clientId: client._id });
+      await ctx.db.insert("activity", {
+        at: now,
+        actor: client.preferredName,
+        actorRole: "client",
+        action: "portal.linked",
+        summary: `${client.preferredName} signed in to her portal for the first time`,
+        clientId: client._id,
+      });
+    }
   },
 });

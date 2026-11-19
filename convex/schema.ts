@@ -31,6 +31,14 @@ export const pipelineStage = v.union(
   v.literal("alumni"),
 );
 
+/** Portal or team access. "none" means access was never given. */
+export const accessStatus = v.union(
+  v.literal("invited"),
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("ended"),
+);
+
 export const permission = v.union(
   v.literal("not_asked"),
   v.literal("granted"),
@@ -112,26 +120,38 @@ export const refDef = v.object({
 });
 
 export default defineSchema({
+  // One row per Clerk sign-in. Email, verification, and the owner flag are
+  // written only by users.sync, from Clerk's own records.
   users: defineTable({
     tokenIdentifier: v.string(),
+    clerkUserId: v.string(),
     email: v.string(),
     emailVerified: v.boolean(),
     name: v.optional(v.string()),
+    isOwner: v.boolean(),
+    syncedAt: v.number(),
     clientId: v.optional(v.id("clients")),
-    lastSeenAt: v.number(),
   })
     .index("by_token", ["tokenIdentifier"])
     .index("by_email", ["email"]),
 
-  // Staff are added by the coach. The coach herself is set with the
-  // COACH_EMAILS environment variable so nobody can promote themselves in-app.
-  teamMembers: defineTable({
+  // Team members managed on the Access page. Owners are marked in Clerk.
+  members: defineTable({
     email: v.string(),
     name: v.string(),
-    role: v.literal("staff"),
-    active: v.boolean(),
+    role: v.union(v.literal("admin"), v.literal("staff")),
+    status: accessStatus,
+    userId: v.optional(v.id("users")),
+    inviteSentAt: v.optional(v.number()),
+    accessNote: v.optional(v.string()),
     addedAt: v.number(),
   }).index("by_email", ["email"]),
+
+  // Which permissions each role has. Missing row means the defaults.
+  rolePermissions: defineTable({
+    role: v.union(v.literal("admin"), v.literal("staff")),
+    permissions: v.array(v.string()),
+  }).index("by_role", ["role"]),
 
   settings: defineTable({
     key: v.literal("main"),
@@ -202,7 +222,10 @@ export default defineSchema({
     sharedFolderUrl: v.optional(v.string()),
     privateFolderUrl: v.optional(v.string()), // never sent to the portal
     // Portal
-    portalEnabled: v.boolean(),
+    access: v.union(v.literal("none"), accessStatus),
+    accessChangedAt: v.optional(v.number()),
+    inviteSentAt: v.optional(v.number()),
+    accessNote: v.optional(v.string()),
     userId: v.optional(v.id("users")),
     interestedInCoaching: v.optional(v.boolean()),
     archived: v.boolean(),

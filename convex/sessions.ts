@@ -7,7 +7,8 @@ import {
   logActivity,
   notFound,
   optText,
-  requireCoach,
+  can,
+  requirePermission,
   requireTeam,
   text,
 } from "./lib/auth";
@@ -122,7 +123,7 @@ export const workspace = query({
     const viewer = await requireTeam(ctx);
     const session = await ctx.db.get(args.id);
     if (!session) return null;
-    const isCoach = viewer.role === "coach";
+    const isCoach = can(viewer, "coaching");
     const client = await ctx.db.get(session.clientId);
     const engagement = await ctx.db.get(session.engagementId);
     if (!client || !engagement) return null;
@@ -201,7 +202,7 @@ export const saveNotes = mutation({
     prepQuestions: v.optional(v.string()),
   },
   handler: async (ctx, { id, ...args }) => {
-    await requireCoach(ctx);
+    await requirePermission(ctx, "coaching");
     const s = await ctx.db.get(id);
     if (!s) notFound("Session");
     const fields = {
@@ -226,7 +227,7 @@ export const saveNotes = mutation({
 export const saveRecapDraft = mutation({
   args: { id: v.id("sessions"), draft: v.string() },
   handler: async (ctx, args) => {
-    await requireCoach(ctx);
+    await requirePermission(ctx, "coaching");
     const s = await ctx.db.get(args.id);
     if (!s) notFound("Session");
     await ctx.db.patch(args.id, { recapDraft: text(args.draft, 8000, "Recap") });
@@ -237,7 +238,7 @@ export const saveRecapDraft = mutation({
 export const approveRecap = mutation({
   args: { id: v.id("sessions"), body: v.string() },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const s = await ctx.db.get(args.id);
     if (!s) notFound("Session");
     const body = text(args.body, 8000, "Recap");
@@ -253,7 +254,7 @@ export const approveRecap = mutation({
 export const unshareRecap = mutation({
   args: { id: v.id("sessions") },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const s = await ctx.db.get(args.id);
     if (!s) notFound("Session");
     await ctx.db.patch(args.id, { recapShared: undefined, recapApprovedAt: undefined });
@@ -268,7 +269,7 @@ export const unshareRecap = mutation({
 export const attachTranscript = mutation({
   args: { id: v.id("sessions"), text: v.string(), source: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const s = await ctx.db.get(args.id);
     if (!s) notFound("Session");
     const e = await ctx.db.get(s.engagementId);
@@ -298,7 +299,7 @@ export const attachTranscript = mutation({
 export const removeTranscript = mutation({
   args: { id: v.id("sessions") },
   handler: async (ctx, args) => {
-    const viewer = await requireCoach(ctx);
+    const viewer = await requirePermission(ctx, "coaching");
     const s = await ctx.db.get(args.id);
     if (!s) notFound("Session");
     const existing = await ctx.db
@@ -314,7 +315,7 @@ export const removeTranscript = mutation({
 export const setTranscriptStatus = mutation({
   args: { id: v.id("sessions"), status: transcriptStatus },
   handler: async (ctx, args) => {
-    await requireCoach(ctx);
+    await requirePermission(ctx, "coaching");
     const s = await ctx.db.get(args.id);
     if (!s) notFound("Session");
     if (args.status === "ready") bad("Attach the transcript to mark it ready.");

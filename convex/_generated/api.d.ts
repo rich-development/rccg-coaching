@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as access from "../access.js";
 import type * as actions from "../actions.js";
 import type * as ai from "../ai.js";
 import type * as assessments from "../assessments.js";
@@ -19,6 +20,7 @@ import type * as engagements from "../engagements.js";
 import type * as feedback from "../feedback.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_balance from "../lib/balance.js";
+import type * as lib_clerk from "../lib/clerk.js";
 import type * as lib_defaults from "../lib/defaults.js";
 import type * as lib_threads from "../lib/threads.js";
 import type * as library from "../library.js";
@@ -38,6 +40,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "access": typeof access;
   "actions": typeof actions;
   "ai": typeof ai;
   "assessments": typeof assessments;
@@ -49,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "feedback": typeof feedback;
   "lib/auth": typeof lib_auth;
   "lib/balance": typeof lib_balance;
+  "lib/clerk": typeof lib_clerk;
   "lib/defaults": typeof lib_defaults;
   "lib/threads": typeof lib_threads;
   "library": typeof library;

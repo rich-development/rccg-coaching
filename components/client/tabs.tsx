@@ -6,6 +6,7 @@ import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ActionRow, AddAction } from "@/components/action-list";
+import { useCan } from "@/components/role";
 import { QuestionSet } from "@/components/worksheet";
 import { Badge, Button, Empty, Field, Input, LinkButton, Modal, Panel, SafeLink, Select, TextArea, useAct, Visibility } from "@/components/ui";
 import { ago, dateTime, fromLocalInput, isoLabel, shortDate, toLocalInput, words } from "@/lib/format";
@@ -340,7 +341,8 @@ export function AssessmentsTab({ data }: { data: Detail }) {
 const PLACEMENTS = ["Website", "Social media", "Printed materials", "Other materials"];
 
 export function HistoryTab({ data, isCoach }: { data: Detail; isCoach: boolean }) {
-  const activity = useQuery(api.settings.activity, isCoach ? { clientId: data.client._id, limit: 80 } : "skip");
+  const canAudit = useCan("access");
+  const activity = useQuery(api.settings.activity, canAudit ? { clientId: data.client._id, limit: 80 } : "skip");
   const draft = useMutation(api.feedback.draftTestimonial);
   const answer = useMutation(api.feedback.recordTestimonialAnswer);
   const { act, busy } = useAct();
@@ -440,7 +442,7 @@ export function HistoryTab({ data, isCoach }: { data: Detail; isCoach: boolean }
         </Panel>
       )}
 
-      {isCoach && (
+      {canAudit && (
         <Panel title="Activity history" className="lg:col-span-2">
           {!activity || activity.length === 0 ? (
             <Empty>No activity recorded yet.</Empty>

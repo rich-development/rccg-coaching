@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
-import { useIsCoach } from "@/components/role";
+import { useCan } from "@/components/role";
 import { QuestionSet } from "@/components/worksheet";
 import { Badge, Button, Field, Input, Loading, Modal, PageTitle, Panel, Tabs, TextArea, useAct } from "@/components/ui";
 
@@ -101,7 +101,7 @@ const JOURNEY = [
 ];
 
 export default function LibraryPage() {
-  const isCoach = useIsCoach();
+  const isCoach = useCan("settings");
   const services = useQuery(api.library.services, {});
   const worksheets = useQuery(api.library.worksheets, {});
   const templates = useQuery(api.library.templates, {});
