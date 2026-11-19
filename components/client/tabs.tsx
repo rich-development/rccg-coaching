@@ -20,7 +20,7 @@ export function SessionsTab({ data }: { data: Detail }) {
   const schedule = useMutation(api.sessions.schedule);
   const { act, busy } = useAct();
   const open = data.engagements.filter((e) => e.status === "active" || e.status === "onboarding");
-  const [v, setV] = useState({ engagementId: (open[0]?._id ?? "") as string, when: toLocalInput(Date.now() + 7 * 86400_000), format: "virtual" as "virtual" | "in_person", meetLink: "", location: "" });
+  const [v, setV] = useState(() => ({ engagementId: (open[0]?._id ?? "") as string, when: toLocalInput(Date.now() + 7 * 86400_000), format: "virtual" as "virtual" | "in_person", meetLink: "", location: "" }));
   const chosen = open.find((e) => e._id === v.engagementId) ?? open[0];
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_21rem]">

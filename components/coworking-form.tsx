@@ -37,7 +37,7 @@ export function CoworkingForm({
   saveLabel: string;
   onSave: (v: CoworkingValues) => void;
 }) {
-  const [v, setV] = useState({
+  const [v, setV] = useState(() => ({
     title: initial?.title ?? "Co-working session",
     when: toLocalInput(initial?.startsAt ?? Date.now() + 14 * 86400_000),
     timeZone: initial?.timeZone ?? timeZone,
@@ -51,7 +51,7 @@ export function CoworkingForm({
     instructions: initial?.instructions ?? "",
     cancellationTerms: initial?.cancellationTerms ?? "",
     status: initial?.status ?? ("draft" as CoworkingValues["status"]),
-  });
+  }));
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV((old) => ({ ...old, [k]: e.target.value }));
   return (
     <form

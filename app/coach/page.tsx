@@ -43,7 +43,7 @@ export default function TodayPage() {
   return (
     <div>
       <header className="mb-7">
-        <p className="text-sm text-soft">{dayLabel(Date.now())}</p>
+        <p className="text-sm text-soft">{dayLabel(bounds.dayStart)}</p>
         <h1 className="mt-1 text-[2.1rem] leading-tight">Today</h1>
         <span className="swash" aria-hidden />
         <p className="mt-3 text-sm text-soft">
