@@ -12,6 +12,7 @@ import {
   requireTeam,
   text,
 } from "./lib/auth";
+import { assignNextWorksheet, syncChecklist } from "./lib/automation";
 import { computeBalance } from "./lib/balance";
 
 export const schedule = mutation({
@@ -52,6 +53,7 @@ export const schedule = mutation({
       countsAgainstBalance: true,
       transcriptStatus: e.transcriptionPermission === "granted" ? "pending" : "not_permitted",
     });
+    await syncChecklist(ctx, args.engagementId);
     await logActivity(ctx, viewer, "session.scheduled", `Booked session ${live.length + 1} of ${e.serviceName}`, e.clientId, id);
     return id;
   },
@@ -112,6 +114,10 @@ export const setStatus = mutation({
       statusNote: optText(args.note, 600),
       completedAt: args.status === "completed" ? (s.completedAt ?? Date.now()) : undefined,
     });
+    if (args.status === "completed" && s.status !== "completed") {
+      const engagement = await ctx.db.get(s.engagementId);
+      if (engagement) await assignNextWorksheet(ctx, engagement);
+    }
     await logActivity(ctx, viewer, "session.status", `Marked session ${s.number} as ${args.status}`, s.clientId, args.id);
   },
 });
@@ -246,7 +252,18 @@ export const approveRecap = mutation({
     if (/\[[^\]]{2,60}\]/.test(body)) {
       bad("The recap still has a [bracketed] placeholder. Fill it in or remove it before sharing.");
     }
-    await ctx.db.patch(args.id, { recapDraft: body, recapShared: body, recapApprovedAt: Date.now() });
+    // Approving the recap closes out the session, so there is no second step.
+    const closing = s.status === "scheduled";
+    await ctx.db.patch(args.id, {
+      recapDraft: body,
+      recapShared: body,
+      recapApprovedAt: Date.now(),
+      ...(closing ? { status: "completed" as const, countsAgainstBalance: true, completedAt: Date.now() } : {}),
+    });
+    if (closing) {
+      const engagement = await ctx.db.get(s.engagementId);
+      if (engagement) await assignNextWorksheet(ctx, engagement);
+    }
     await logActivity(ctx, viewer, "recap.approved", `Approved and shared the recap for session ${s.number}`, s.clientId, args.id);
   },
 });

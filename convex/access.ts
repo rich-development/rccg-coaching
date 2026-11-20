@@ -14,6 +14,7 @@ import {
   validEmail,
   type Viewer,
 } from "./lib/auth";
+import { ensureIntake, syncClientChecklists } from "./lib/automation";
 import { clerkConfigured, revokeSessions, sendInvitation } from "./lib/clerk";
 
 /**
@@ -180,6 +181,10 @@ export const setClientAccess = mutation({
     // Restoring someone who never signed in puts her back to "invited".
     const access = args.access === "active" && c.userId === undefined ? "invited" : args.access;
     await ctx.db.patch(args.id, { access, accessChangedAt: Date.now(), accessNote: undefined });
+    if (args.access === "active") {
+      await ensureIntake(ctx, args.id);
+      await syncClientChecklists(ctx, args.id);
+    }
     await logActivity(
       ctx,
       viewer,
@@ -263,6 +268,9 @@ export const markInvited = internalMutation({
       if (c.archived) bad("Restore her record before inviting her.");
       const linked = c.userId !== undefined;
       await ctx.db.patch(c._id, { access: linked ? "active" : "invited", accessChangedAt: now, inviteSentAt: now });
+      // Intake is the first thing she sees when she signs in.
+      await ensureIntake(ctx, c._id);
+      await syncClientChecklists(ctx, c._id);
       await logActivity(ctx, viewer, "access.client_invited", `Invited ${c.preferredName} to her portal`, c._id);
       return { email: c.email, alreadySignedIn: linked };
     }

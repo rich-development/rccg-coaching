@@ -522,3 +522,130 @@ describe("access management", () => {
     await expect(owner.query(api.clients.list, {})).rejects.toThrow();
   });
 });
+
+describe("automation that removes admin work", () => {
+  test("invite assigns intake, intake fills the record, and the checklist checks itself", async () => {
+    const t = convexTest(schema, modules);
+    const owner = t.withIdentity(COACH);
+    await owner.action(api.users.sync, {});
+    const id = await owner.mutation(api.clients.create, { fullName: "Ana Lee", preferredName: "Ana", email: "ana@example.com" });
+    await owner.action(api.access.invite, { kind: "client", id });
+    const ana = t.withIdentity(ANA);
+    expect(await roleOf(ana)).toBe("client");
+    const engagementId = await owner.mutation(api.engagements.create, { clientId: id, serviceKey: "structure", startDate: TODAY });
+    const home = await ana.query(api.portal.home, {});
+    const intake = home.assessments.find((a) => a.kind === "intake")!;
+    expect(home.assessments.filter((a) => a.kind === "intake").length).toBe(1); // not assigned twice
+    expect(home.worksheets.map((w) => w.title)).toEqual(["Your starting point"]); // first page, automatically
+    await ana.mutation(api.portal.submitAssessment, {
+      id: intake._id,
+      answers: { preferred_name: "Annie", business: "Lee Bakes", stage: "Pivoting", outcome: "Three wholesale accounts", obstacle: "Pricing", tried: "Markets", hours: "8", resources: "A kitchen", limits: "School pickups at 3" },
+    });
+    const record = (await owner.query(api.clients.get, { id }))!;
+    expect(record.client).toMatchObject({ preferredName: "Annie", businessName: "Lee Bakes", stage: "pivoting", goals: "Three wholesale accounts", hoursPerWeek: 8 });
+    expect(record.engagements[0].goal).toBe("Three wholesale accounts");
+    // She accepts the agreement and answers consent herself.
+    await expect(ana.mutation(api.portal.acceptAgreement, { typedName: "Ana", agreed: true })).rejects.toThrow(); // full name needed
+    await expect(ana.mutation(api.portal.acceptAgreement, { typedName: "Ana Lee", agreed: false })).rejects.toThrow();
+    await ana.mutation(api.portal.acceptAgreement, { typedName: "Ana Lee", agreed: true });
+    await ana.mutation(api.portal.answerConsent, { recording: false, transcription: true, ai: true });
+    let e = (await owner.query(api.clients.get, { id }))!.engagements[0];
+    expect(e.agreementSignature).toBe("Ana Lee");
+    expect(e.agreementAcceptedText).toContain("Start With Structure");
+    expect(e).toMatchObject({ recordingPermission: "declined", transcriptionPermission: "declined", aiPermission: "granted" });
+    // Remaining steps happen through normal work, not checkboxes.
+    await owner.mutation(api.engagements.recordPayment, { id: engagementId, status: "paid", amountPaidCents: 69500 });
+    await owner.mutation(api.messages.send, { clientId: id, body: "Welcome, Annie." });
+    await owner.mutation(api.assessments.markReviewed, { id: intake._id });
+    for (let i = 0; i < 4; i++) await owner.mutation(api.sessions.schedule, { engagementId, scheduledAt: Date.now() + (i + 1) * 86400_000, format: "virtual" });
+    e = (await owner.query(api.clients.get, { id }))!.engagements[0];
+    expect(e.checklist.filter((c) => !c.done).map((c) => c.key)).toEqual([]);
+    expect(e.status).toBe("active");
+  });
+
+  test("approving a recap closes the session and queues the next page; check-ins go out on schedule; renew is one click", async () => {
+    const { t, coach: owner, ana, asAna } = await setup();
+    await owner.mutation(api.sessions.approveRecap, { id: ana.sessionId, body: "Hi Ana, good session." });
+    const detail = (await owner.query(api.clients.get, { id: ana.clientId }))!;
+    expect(detail.sessions.find((s) => s._id === ana.sessionId)!.status).toBe("completed");
+    // The first page is still open, so no second page is stacked on top of it.
+    expect(detail.worksheets.filter((w) => w.engagementId === ana.engagementId).length).toBe(1);
+    // Daily job: active engagement, started today, so the first check-in is not due yet.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(ana.engagementId, { status: "active", startDate: new Date(Date.now() - 8 * 86400_000).toISOString().slice(0, 10) });
+      const mine = await ctx.db.query("assessments").withIndex("by_client", (q) => q.eq("clientId", ana.clientId)).collect();
+      for (const a of mine) if (a.kind === "checkin") await ctx.db.delete(a._id);
+    });
+    expect(await t.mutation(internal.automation.daily, {})).toBe(1);
+    expect(await t.mutation(internal.automation.daily, {})).toBe(0); // not again while one is waiting
+    expect((await asAna.query(api.portal.home, {})).assessments.filter((a) => a.kind === "checkin" && a.status === "assigned").length).toBe(1);
+    await owner.mutation(api.engagements.setAutomation, { id: ana.engagementId, off: true });
+    await t.run(async (ctx) => {
+      const mine = await ctx.db.query("assessments").withIndex("by_client", (q) => q.eq("clientId", ana.clientId)).collect();
+      for (const a of mine) if (a.kind === "checkin") await ctx.db.delete(a._id);
+    });
+    expect(await t.mutation(internal.automation.daily, {})).toBe(0); // switched off for her
+    const nextId = await owner.mutation(api.engagements.renew, { id: ana.engagementId });
+    const after = (await owner.query(api.clients.get, { id: ana.clientId }))!.engagements;
+    expect(after.find((x) => x._id === ana.engagementId)!.status).toBe("completed");
+    expect(after.find((x) => x._id === nextId)).toMatchObject({ cycle: 2, priceCents: 69500, aiPermission: "granted" });
+  });
+
+  test("the public inquiry form only creates an inquiry and never reveals who is on file", async () => {
+    const { t, coach: owner } = await setup();
+    const first = await t.mutation(api.clients.publicInquiry, { name: "Dee Jones", email: "Dee@Example.com", stage: "starting", message: "I want to open a salon." });
+    const repeat = await t.mutation(api.clients.publicInquiry, { name: "Ana Again", email: "ana@example.com", message: "Hello" });
+    const bot = await t.mutation(api.clients.publicInquiry, { name: "Bot", email: "bot@example.com", website: "http://spam" });
+    expect([first, repeat, bot]).toEqual([{ ok: true }, { ok: true }, { ok: true }]);
+    const list = await owner.query(api.clients.list, {});
+    expect(list.length).toBe(3); // Ana, Bea, and Dee. No duplicate Ana, no bot.
+    const dee = list.find((c) => c.email === "dee@example.com")!;
+    expect(dee).toMatchObject({ pipelineStage: "inquiry", access: "none" });
+    await expect(t.mutation(api.clients.publicInquiry, { name: "X", email: "not-an-email" })).rejects.toThrow();
+  });
+
+  test("files: a client sees only her own shared files, never private ones", async () => {
+    const { t, coach: owner, ana, bea, asAna, asBea } = await setup();
+    const store = () => t.run(async (ctx) => await ctx.storage.store(new Blob(["hello"], { type: "text/plain" })));
+    await owner.mutation(api.files.save, { clientId: ana.clientId, storageId: await store(), name: "Shared plan.txt", visibility: "shared" });
+    await owner.mutation(api.files.save, { clientId: ana.clientId, storageId: await store(), name: "PRIVATE coach file.txt", visibility: "private" });
+    await asAna.mutation(api.portal.saveFile, { storageId: await store(), name: "My price list.txt" });
+    expect((await asAna.query(api.portal.files, {})).map((f) => f.name).sort()).toEqual(["My price list.txt", "Shared plan.txt"]);
+    expect(await asBea.query(api.portal.files, {})).toEqual([]);
+    const mine = await asAna.query(api.portal.files, {});
+    // She can remove her own upload but not one Tamika added.
+    await expect(asAna.mutation(api.portal.removeFile, { id: mine.find((f) => f.name === "Shared plan.txt")!._id })).rejects.toThrow();
+    await asAna.mutation(api.portal.removeFile, { id: mine.find((f) => f.name === "My price list.txt")!._id });
+    await expect(asBea.mutation(api.portal.removeFile, { id: mine.find((f) => f.name === "Shared plan.txt")!._id })).rejects.toThrow();
+    await expect(asAna.query(api.files.list, { clientId: bea.clientId })).rejects.toThrow();
+    // Staff see shared files but not private ones.
+    await owner.mutation(api.access.addMember, { email: "helper@example.com", name: "Helper", role: "staff" });
+    const staff = t.withIdentity(STAFF);
+    expect(await roleOf(staff)).toBe("staff");
+    expect((await staff.query(api.files.list, { clientId: ana.clientId })).files.map((f) => f.name)).toEqual(["Shared plan.txt"]);
+    await expect(staff.mutation(api.files.save, { clientId: ana.clientId, storageId: await store(), name: "x", visibility: "private" })).rejects.toThrow();
+    // Pausing her access cuts off the file list too.
+    await owner.mutation(api.access.setClientAccess, { id: ana.clientId, access: "paused" });
+    await expect(asAna.query(api.portal.files, {})).rejects.toThrow();
+  });
+
+  test("the Library can grow: new service, workbook page, template, and guide", async () => {
+    const { coach: owner, ana } = await setup();
+    await owner.mutation(api.library.addService, { name: "Finish What You Started", kind: "package", priceCents: 45000, priceNote: "$450", sessionsIncluded: 3, sessionMinutes: 60, durationWeeks: 4, supportTerms: "One email check-in.", description: "Three sessions to finish one project." });
+    const svc = (await owner.query(api.library.services, {})).find((s) => s.name === "Finish What You Started")!;
+    await owner.mutation(api.library.addWorksheet, { title: "Name your offer", intro: "Short answers.", fields: [{ key: "", label: "What do you sell?", type: "long" }, { key: "", label: "Price", type: "short" }] });
+    const page = (await owner.query(api.library.worksheets, {})).find((w) => w.title === "Name your offer")!;
+    expect(new Set(page.fields.map((f) => f.key)).size).toBe(2);
+    await owner.mutation(api.library.saveServiceAutomation, { id: svc._id, worksheetOrder: [page.key, "not_a_page"], checkinEveryDays: 10 });
+    expect((await owner.query(api.library.services, {})).find((s) => s._id === svc._id)!.worksheetOrder).toEqual([page.key]);
+    await owner.mutation(api.worksheets.assign, { clientId: ana.clientId, templateKey: page.key });
+    await owner.mutation(api.library.addTemplate, { name: "Nudge", subject: "Quick nudge", body: "Hi [Name], how is [agreed action] going?" });
+    expect((await owner.query(api.library.templates, {})).some((x) => x.name === "Nudge")).toBe(true);
+    expect((await owner.query(api.library.guideList, {})).length).toBe(5);
+    await owner.mutation(api.library.saveGuide, { title: "My opening script", body: "Start with one win." });
+    await owner.mutation(api.library.saveGuide, { key: "scope", title: "Keeping scope clear", body: "Rewritten." });
+    const guides = await owner.query(api.library.guideList, {});
+    expect(guides.length).toBe(6);
+    expect(guides.find((g) => g.key === "scope")!.body).toBe("Rewritten.");
+  });
+});

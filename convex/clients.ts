@@ -305,6 +305,16 @@ export const saveDiscovery = mutation({
       decisionNote: optText(args.decisionNote, 2000),
       referralNote: optText(args.referralNote, 2000),
     });
+    // Recommending a service sets the next step, so it is not typed twice.
+    const recommended = optText(args.recommendedServiceKey, 60);
+    if (recommended && recommended !== client.recommendedServiceKey && !client.followUpAction) {
+      const service = await ctx.db
+        .query("services")
+        .withIndex("by_key", (q) => q.eq("key", recommended))
+        .unique();
+      const due = new Date(Date.now() + 86400_000).toISOString().slice(0, 10);
+      await ctx.db.patch(id, { followUpAction: `Send ${client.preferredName} the written details for ${service?.name ?? "the recommended service"}`, followUpDate: due });
+    }
     await logActivity(ctx, viewer, "discovery.saved", `Saved discovery notes for ${client.preferredName}`, id);
   },
 });
@@ -432,5 +442,85 @@ export const exportRecord = mutation({
       testimonials,
       activity,
     };
+  },
+});
+
+const INQUIRY_SOURCE = "Inquiry form";
+const INQUIRIES_PER_DAY = 40;
+
+/**
+ * The public "work with Tamika" form. No sign-in. It only ever creates an
+ * inquiry record. It never gives portal access and never reveals whether an
+ * email is already on file.
+ */
+export const publicInquiry = mutation({
+  args: {
+    name: v.string(),
+    email: v.string(),
+    stage: v.optional(stage),
+    business: v.optional(v.string()),
+    message: v.optional(v.string()),
+    foundBy: v.optional(v.string()),
+    website: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // "website" is a hidden field real people never fill in.
+    if (args.website) return { ok: true };
+    const fullName = text(args.name, 160, "Name");
+    if (fullName.length < 2) bad("Enter your name.");
+    const email = normalizeEmail(text(args.email, 200, "Email"));
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) bad("Enter a valid email.");
+    const message = optText(args.message, 2000, "Message");
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("clients")
+      .withIndex("by_email", (q) => q.eq("email", email))
+      .first();
+    if (existing) {
+      await ctx.db.insert("activity", {
+        at: now,
+        actor: fullName,
+        actorRole: "public",
+        action: "inquiry.repeat",
+        summary: `${fullName} sent the inquiry form again${message ? `: ${message.slice(0, 160)}` : ""}`,
+        clientId: existing._id,
+      });
+      if (!existing.followUpAction) {
+        await ctx.db.patch(existing._id, { followUpAction: `Reply to ${existing.preferredName}'s new inquiry`, followUpDate: new Date(now).toISOString().slice(0, 10) });
+      }
+      return { ok: true };
+    }
+    const recent = await ctx.db
+      .query("clients")
+      .withIndex("by_pipeline", (q) => q.eq("pipelineStage", "inquiry"))
+      .collect();
+    if (recent.filter((c) => c.source === INQUIRY_SOURCE && c.createdAt > now - 86400_000).length >= INQUIRIES_PER_DAY) {
+      bad("We are getting a lot of requests right now. Please try again tomorrow.");
+    }
+    const id = await ctx.db.insert("clients", {
+      fullName,
+      preferredName: fullName.split(" ")[0],
+      email,
+      businessName: optText(args.business, 200),
+      stage: args.stage,
+      source: optText(args.foundBy, 200) ? `${INQUIRY_SOURCE}: ${optText(args.foundBy, 200)}` : INQUIRY_SOURCE,
+      discoveryNeed: message,
+      pipelineStage: "inquiry",
+      pipelineChangedAt: now,
+      followUpAction: `Invite ${fullName.split(" ")[0]} to book a discovery call`,
+      followUpDate: new Date(now).toISOString().slice(0, 10),
+      access: "none",
+      archived: false,
+      createdAt: now,
+    });
+    await ctx.db.insert("activity", {
+      at: now,
+      actor: fullName,
+      actorRole: "public",
+      action: "inquiry.received",
+      summary: `${fullName} sent the inquiry form`,
+      clientId: id,
+    });
+    return { ok: true };
   },
 });

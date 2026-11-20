@@ -13,6 +13,7 @@ import {
   text,
   today,
 } from "./lib/auth";
+import { assignNextWorksheet, ensureIntake, syncChecklist } from "./lib/automation";
 import { checklistFor } from "./lib/defaults";
 import { readSettings } from "./settings";
 
@@ -98,6 +99,10 @@ export const create = mutation({
       pipelineChangedAt: now,
       ...(client.enrolledAt ? {} : { enrolledAt: now }),
     });
+    await ensureIntake(ctx, args.clientId, id);
+    const created = (await ctx.db.get(id))!;
+    await assignNextWorksheet(ctx, created);
+    await syncChecklist(ctx, id);
     await logActivity(
       ctx,
       viewer,
@@ -205,6 +210,7 @@ export const recordPayment = mutation({
         c.key === "payment" ? { ...c, done: confirmed, doneAt: confirmed ? Date.now() : undefined } : c,
       ),
     });
+    await syncChecklist(ctx, args.id);
     await logActivity(
       ctx,
       viewer,
@@ -229,6 +235,7 @@ export const setPermissions = mutation({
     const e = await ctx.db.get(id);
     if (!e) notFound("Engagement");
     await ctx.db.patch(id, { ...args, permissionsUpdatedAt: Date.now() });
+    await syncChecklist(ctx, id);
     await logActivity(
       ctx,
       viewer,
@@ -330,5 +337,77 @@ export const complete = mutation({
       e.clientId,
       id,
     );
+  },
+});
+
+/** One click for a monthly package: close this cycle and start the next. */
+export const renew = mutation({
+  args: { id: v.id("engagements") },
+  handler: async (ctx, args) => {
+    const viewer = await requirePermission(ctx, "coaching");
+    const e = await ctx.db.get(args.id);
+    if (!e) notFound("Engagement");
+    if (e.status !== "active" && e.status !== "completed") bad("Only an active or completed engagement can be renewed.");
+    const service = await ctx.db
+      .query("services")
+      .withIndex("by_key", (q) => q.eq("key", e.serviceKey))
+      .unique();
+    const start = today();
+    if (e.status === "active") {
+      await ctx.db.patch(args.id, { status: "completed", completedOn: start, renewalDecision: "renewing" });
+    } else {
+      await ctx.db.patch(args.id, { renewalDecision: "renewing" });
+    }
+    const id = await ctx.db.insert("engagements", {
+      clientId: e.clientId,
+      serviceKey: e.serviceKey,
+      serviceName: e.serviceName,
+      // A renewal keeps the terms she already agreed to.
+      priceCents: e.priceCents,
+      sessionsIncluded: e.sessionsIncluded,
+      sessionMinutes: e.sessionMinutes,
+      supportTerms: e.supportTerms,
+      supportChannel: e.supportChannel,
+      responseWindow: e.responseWindow,
+      scopeNote: e.scopeNote,
+      startDate: start,
+      endDate: service?.durationWeeks ? addDays(start, service.durationWeeks * 7) : undefined,
+      status: "onboarding",
+      cycle: e.cycle + 1,
+      previousEngagementId: e._id,
+      paymentArrangement: e.paymentArrangement,
+      paymentStatus: "unpaid",
+      amountPaidCents: 0,
+      paymentLink: e.paymentLink,
+      agreementStatus: e.agreementStatus,
+      agreementUrl: e.agreementUrl,
+      agreementAcceptedText: e.agreementAcceptedText,
+      agreementSignature: e.agreementSignature,
+      agreementAcceptedAt: e.agreementAcceptedAt,
+      recordingPermission: e.recordingPermission,
+      transcriptionPermission: e.transcriptionPermission,
+      aiPermission: e.aiPermission,
+      goal: e.next30Plan ?? e.goal,
+      measureName: e.measureName,
+      measureStart: e.measureActual ?? e.measureStart,
+      measureTarget: e.measureTarget,
+      checklist: checklistFor("monthly").filter((c) => c.key === "payment" || c.key === "booking"),
+      automationOff: e.automationOff,
+      createdAt: Date.now(),
+    });
+    await syncChecklist(ctx, id);
+    await logActivity(ctx, viewer, "engagement.renewed", `Renewed ${e.serviceName} for cycle ${e.cycle + 1}`, e.clientId, id);
+    return id;
+  },
+});
+
+export const setAutomation = mutation({
+  args: { id: v.id("engagements"), off: v.boolean() },
+  handler: async (ctx, args) => {
+    const viewer = await requireTeam(ctx);
+    const e = await ctx.db.get(args.id);
+    if (!e) notFound("Engagement");
+    await ctx.db.patch(args.id, { automationOff: args.off });
+    await logActivity(ctx, viewer, "engagement.automation", `Turned ${args.off ? "off" : "on"} automatic check-ins and workbook pages`, e.clientId, args.id);
   },
 });

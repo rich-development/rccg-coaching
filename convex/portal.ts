@@ -1,8 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import { mutation, query, type MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { refDef } from "./schema";
 import { bad, notFound, optText, requireClient, text } from "./lib/auth";
+import { buildAgreement } from "./lib/agreement";
+import { applyIntake, syncChecklist, syncClientChecklists } from "./lib/automation";
 import { computeBalance } from "./lib/balance";
 import { postMessage } from "./lib/threads";
 import { readSettings } from "./settings";
@@ -143,6 +145,15 @@ export const home = query({
                 ? current.paymentLink
                 : undefined,
             agreementUrl: current.agreementUrl,
+            agreementAccepted: current.agreementStatus === "signed",
+            agreementAcceptedAt: current.agreementAcceptedAt,
+            agreementSignature: current.agreementSignature,
+            // Shown until she accepts. After that she sees what she accepted.
+            agreementText: current.agreementAcceptedText ?? buildAgreement(current, settings.coachName, settings.agreementTerms),
+            consentAnswered:
+              current.recordingPermission !== "not_asked" &&
+              current.transcriptionPermission !== "not_asked" &&
+              current.aiPermission !== "not_asked",
             recordingPermission: current.recordingPermission,
             transcriptionPermission: current.transcriptionPermission,
             aiPermission: current.aiPermission,
@@ -447,6 +458,8 @@ export const submitAssessment = mutation({
     const missing = a.questions.filter((q) => !q.optional && !answers[q.key]);
     if (missing.length > 0) bad(`Please answer: ${missing[0].label}`);
     await ctx.db.patch(args.id, { answers, status: "completed", completedAt: Date.now() });
+    await applyIntake(ctx, a, answers);
+    await syncClientChecklists(ctx, client._id);
     if (a.kind === "feedback") {
       // Feedback is stored on its own. It is never treated as permission to publish.
       await ctx.db.insert("feedback", {
@@ -488,5 +501,168 @@ export const answerTestimonial = mutation({
       clientId: client._id,
       entity: args.id,
     });
+  },
+});
+
+async function currentEngagement(ctx: MutationCtx, clientId: Id<"clients">) {
+  const engagements = await ctx.db
+    .query("engagements")
+    .withIndex("by_client", (q) => q.eq("clientId", clientId))
+    .collect();
+  return (
+    engagements.find((e) => e.status === "active") ??
+    engagements.find((e) => e.status === "onboarding") ??
+    engagements.find((e) => e.status === "paused") ??
+    null
+  );
+}
+
+/**
+ * Click-to-accept with a typed signature. The agreement text is rebuilt on
+ * the server from her saved terms, so what is stored is exactly what she saw.
+ */
+export const acceptAgreement = mutation({
+  args: { typedName: v.string(), agreed: v.boolean() },
+  handler: async (ctx, args) => {
+    const { client } = await requireClient(ctx);
+    const e = await currentEngagement(ctx, client._id);
+    if (!e) notFound("Agreement");
+    if (e.agreementStatus === "signed") bad("You already accepted this agreement.");
+    if (!args.agreed) bad("Check the box to show you agree.");
+    const typedName = text(args.typedName, 160, "Your name");
+    if (typedName.length < 3 || !typedName.includes(" ")) bad("Type your full name as your signature.");
+    const settings = await readSettings(ctx);
+    const now = Date.now();
+    await ctx.db.patch(e._id, {
+      agreementStatus: "signed",
+      agreementAcceptedText: buildAgreement(e, settings.coachName, settings.agreementTerms),
+      agreementSignature: typedName,
+      agreementAcceptedAt: now,
+    });
+    await syncChecklist(ctx, e._id);
+    await ctx.db.insert("activity", {
+      at: now,
+      actor: client.preferredName,
+      actorRole: "client",
+      action: "agreement.accepted",
+      summary: `${client.preferredName} accepted the ${e.serviceName} agreement, signing as "${typedName}"`,
+      clientId: client._id,
+      entity: e._id,
+    });
+  },
+});
+
+/** Her own answers on recording, transcripts, and AI help. She can change them any time. */
+export const answerConsent = mutation({
+  args: { recording: v.boolean(), transcription: v.boolean(), ai: v.boolean() },
+  handler: async (ctx, args) => {
+    const { client } = await requireClient(ctx);
+    const e = await currentEngagement(ctx, client._id);
+    if (!e) notFound("Engagement");
+    const say = (yes: boolean) => (yes ? ("granted" as const) : ("declined" as const));
+    await ctx.db.patch(e._id, {
+      recordingPermission: say(args.recording),
+      // A transcript needs a recording, so "no recording" also means no transcript.
+      transcriptionPermission: say(args.recording && args.transcription),
+      aiPermission: say(args.ai),
+      permissionsUpdatedAt: Date.now(),
+    });
+    await syncChecklist(ctx, e._id);
+    await ctx.db.insert("activity", {
+      at: Date.now(),
+      actor: client.preferredName,
+      actorRole: "client",
+      action: "permissions.client",
+      summary: `${client.preferredName} set her choices. Recording: ${args.recording ? "yes" : "no"}. Transcript: ${args.recording && args.transcription ? "yes" : "no"}. AI help: ${args.ai ? "yes" : "no"}.`,
+      clientId: client._id,
+      entity: e._id,
+    });
+  },
+});
+
+/* ---------- Files ---------- */
+
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+/** Shared files only. Private coach files are never read here. */
+export const files = query({
+  args: {},
+  handler: async (ctx) => {
+    const { client } = await requireClient(ctx);
+    const rows = await ctx.db
+      .query("files")
+      .withIndex("by_client", (q) => q.eq("clientId", client._id))
+      .order("desc")
+      .collect();
+    const out = [];
+    for (const f of rows) {
+      if (f.visibility !== "shared") continue;
+      out.push({
+        _id: f._id,
+        name: f.name,
+        size: f.size,
+        uploadedBy: f.uploadedBy,
+        uploaderName: f.uploaderName,
+        createdAt: f.createdAt,
+        url: await ctx.storage.getUrl(f.storageId),
+      });
+    }
+    return out;
+  },
+});
+
+export const fileUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireClient(ctx);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const saveFile = mutation({
+  args: { storageId: v.id("_storage"), name: v.string() },
+  handler: async (ctx, args) => {
+    const { client } = await requireClient(ctx);
+    const meta = await ctx.db.system.get(args.storageId);
+    if (!meta) notFound("Upload");
+    const already = await ctx.db
+      .query("files")
+      .withIndex("by_client", (q) => q.eq("clientId", client._id))
+      .collect();
+    if (meta.size > MAX_FILE_BYTES || already.length >= 200) {
+      await ctx.storage.delete(args.storageId);
+      bad(meta.size > MAX_FILE_BYTES ? "That file is too big. The limit is 20 MB." : "This folder is full. Ask Tamika to clear some space.");
+    }
+    await ctx.db.insert("files", {
+      clientId: client._id,
+      storageId: args.storageId,
+      name: text(args.name, 200, "File name") || "Untitled",
+      size: meta.size,
+      contentType: meta.contentType ?? "application/octet-stream",
+      visibility: "shared",
+      uploadedBy: "client",
+      uploaderName: client.preferredName,
+      createdAt: Date.now(),
+    });
+    await ctx.db.insert("activity", {
+      at: Date.now(),
+      actor: client.preferredName,
+      actorRole: "client",
+      action: "file.uploaded",
+      summary: `${client.preferredName} shared a file: ${args.name.slice(0, 120)}`,
+      clientId: client._id,
+    });
+  },
+});
+
+/** A client can remove a file she uploaded herself. */
+export const removeFile = mutation({
+  args: { id: v.id("files") },
+  handler: async (ctx, args) => {
+    const { client } = await requireClient(ctx);
+    const f = await ctx.db.get(args.id);
+    if (!f || f.clientId !== client._id || f.visibility !== "shared" || f.uploadedBy !== "client") notFound("File");
+    await ctx.storage.delete(f.storageId);
+    await ctx.db.delete(args.id);
   },
 });

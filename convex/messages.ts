@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { refDef, threadStatus } from "./schema";
 import { bad, isoDate, logActivity, notFound, requireTeam, text } from "./lib/auth";
+import { syncClientChecklists } from "./lib/automation";
 import { postMessage } from "./lib/threads";
 import { readSettings } from "./settings";
 
@@ -53,7 +54,34 @@ export const thread = query({
       .collect();
     const current = engagements.find((e) => e.status === "active" || e.status === "onboarding");
     const settings = await readSettings(ctx);
+    // Facts the templates ask for, so most [brackets] fill themselves.
+    const sessions = current
+      ? await ctx.db
+          .query("sessions")
+          .withIndex("by_engagement", (q) => q.eq("engagementId", current._id))
+          .collect()
+      : [];
+    const upcoming = sessions.filter((x) => x.status === "scheduled" && x.scheduledAt > Date.now() - 3600_000).sort((a, b) => a.scheduledAt - b.scheduledAt)[0];
+    const last = sessions.filter((x) => x.status === "completed").sort((a, b) => b.scheduledAt - a.scheduledAt)[0];
+    const actions = await ctx.db
+      .query("actions")
+      .withIndex("by_client", (q) => q.eq("clientId", args.clientId))
+      .collect();
+    const openActions = actions.filter((a) => a.visibleToClient && (a.status === "open" || a.status === "in_progress"));
+    const merge = {
+      goal: current?.goal ?? null,
+      service: current ? `${current.serviceName} (${current.sessionsIncluded} session${current.sessionsIncluded === 1 ? "" : "s"} of ${current.sessionMinutes} minutes)` : null,
+      nextAt: upcoming?.scheduledAt ?? null,
+      nextWhere: upcoming ? (upcoming.format === "virtual" ? (upcoming.meetLink ?? null) : (upcoming.location ?? null)) : null,
+      support: current ? `${current.supportTerms} Reach me by ${current.supportChannel.toLowerCase()}; I reply ${current.responseWindow.toLowerCase()}.` : null,
+      channel: current?.supportChannel ?? settings.supportChannel,
+      priority: last?.priority ?? null,
+      clientActions: openActions.filter((a) => a.owner === "client").map((a) => ({ title: a.title, dueDate: a.dueDate ?? null, doneLooksLike: a.doneLooksLike ?? null })),
+      coachActions: openActions.filter((a) => a.owner === "coach").map((a) => a.title),
+      coachFirstName: settings.coachName.split(" ")[0],
+    };
     return {
+      merge,
       client: { _id: client._id, preferredName: client.preferredName, fullName: client.fullName, email: client.email, portalLinked: client.userId !== undefined },
       thread: t,
       messages,
@@ -76,6 +104,7 @@ export const send = mutation({
       bad("This message still has a [bracketed] placeholder. Fill it in before sending.");
     }
     await postMessage(ctx, args.clientId, "coach", viewer.name, body, args.ref);
+    await syncClientChecklists(ctx, args.clientId);
     await logActivity(ctx, viewer, "message.sent", `Sent a message to ${client.preferredName}`, args.clientId);
   },
 });

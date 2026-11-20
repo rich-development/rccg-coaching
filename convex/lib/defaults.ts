@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS = {
   officeAddress: OFFICE_ADDRESS,
   weeklySessionCapacity: 8,
   aiEnabled: false,
+  agreementTerms: undefined as string | undefined,
 };
 
 export const DEFAULT_SERVICES = [
@@ -130,14 +131,13 @@ export const DEFAULT_SERVICES = [
 export function checklistFor(kind: string) {
   const all = [
     { key: "terms", label: "Record the service, scope, dates, and payment arrangement" },
-    { key: "agreement", label: "Service agreement completed" },
+    { key: "agreement", label: "Service agreement accepted" },
     { key: "payment", label: "Payment confirmed directly" },
     { key: "booking", label: "Included sessions booked" },
-    { key: "folders", label: "Private coach folder and separate client folder created" },
     { key: "intake", label: "Intake assigned" },
     { key: "workbook", label: "First worksheet assigned" },
     { key: "welcome", label: "Welcome message sent" },
-    { key: "permissions", label: "Recording, transcript, and AI permissions asked" },
+    { key: "permissions", label: "Recording, transcript, and AI choices answered" },
     { key: "prep", label: "Intake reviewed and three questions prepared" },
   ];
   const skip: Record<string, string[]> = {
@@ -541,3 +541,36 @@ export const DISCOVERY_GUIDE = [
 
 export const COWORKING_INSTRUCTIONS =
   "Bring one business task you can work on without needing a lot of teaching, plus the files, device, charger, and materials you need. We will name our tasks, work in two quiet blocks with a short break, and share progress at the end. Please respect privacy, share advice only when invited, and keep customer details private. This session is not recorded.";
+
+export const DEFAULT_GUIDES = [
+  {
+    key: "rhythm",
+    title: "60-minute session rhythm",
+    body: "- **0 to 10 minutes:** Review wins, actions, and what changed\n- **10 to 15 minutes:** Agree on the outcome for this meeting\n- **15 to 40 minutes:** Explore the obstacle and work through a decision or exercise\n- **40 to 55 minutes:** Choose up to three actions, owners, and dates\n- **55 to 60 minutes:** Ask the client to restate the plan and confirm the next meeting\n\n90-minute Your Next Step: 10 of context, 10 to agree on the challenge, 45 working, 20 for the action plan, 5 to close.\n\n45-minute Keep Moving: 5 to check progress, 5 to set focus, 25 to work, 10 to agree on action.",
+    sort: 1,
+  },
+  {
+    key: "journey",
+    title: "Six-week coaching journey",
+    body: "- **Week 1.** Clarify the starting point and desired change. Leave with: one coaching goal and a clear business description.\n- **Week 2.** Choose priorities and allocate resources. Leave with: a realistic 30-day action plan and weekly schedule.\n- **Week 4.** Review action and make one task repeatable. Leave with: a usable process and an adjusted plan.\n- **Week 6.** Assess progress and plan independent follow-through. Leave with: evidence of progress and the next 30-day plan.\n\nUse weeks 3 and 5 for implementation with the email check-in. She does not need to finish the whole workbook.",
+    sort: 2,
+  },
+  {
+    key: "stage",
+    title: "Adapt to her stage",
+    body: "- **Starting.** Existing skills, a clear offer, customer conversations, and a manageable first step.\n- **Starting over.** What to keep, change, or stop before adding more work.\n- **Pivoting.** What changes, what continues, and how to test the new direction with limited resources.",
+    sort: 3,
+  },
+  {
+    key: "missed",
+    title: "When a commitment was not completed",
+    body: "Ask what happened before assigning more work. Was the task unclear, too large, dependent on someone else, or no longer useful? Reduce or revise it together. Record a new next step and date instead of carrying an unrealistic task forward.\n\nWorking principle: let the client do the thinking and make the decisions. Ask useful questions, offer practical options, and help her turn a decision into a repeatable action.",
+    sort: 4,
+  },
+  {
+    key: "scope",
+    title: "Keeping scope clear",
+    body: "Coaching includes questions, planning, accountability, and guided use of worksheets. Hands-on setup, document production, website work, or ongoing administration need a separate scope and price. Do not promise revenue, funding, or a completed business launch.",
+    sort: 5,
+  },
+];

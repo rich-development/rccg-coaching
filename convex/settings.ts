@@ -64,6 +64,7 @@ export const update = mutation({
     officeAddress: v.string(),
     weeklySessionCapacity: v.number(),
     aiEnabled: v.boolean(),
+    agreementTerms: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const viewer = await requirePermission(ctx, "settings");
@@ -87,6 +88,7 @@ export const update = mutation({
       officeAddress: text(args.officeAddress, 300),
       weeklySessionCapacity: Math.round(args.weeklySessionCapacity),
       aiEnabled: args.aiEnabled,
+      agreementTerms: args.agreementTerms === undefined ? undefined : text(args.agreementTerms, 6000, "Policies") || undefined,
     });
     await logActivity(ctx, viewer, "settings.updated", "Updated practice settings");
   },

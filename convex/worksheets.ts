@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
+import { syncClientChecklists } from "./lib/automation";
 import { bad, isoDate, link, logActivity, notFound, optText, requireTeam } from "./lib/auth";
 
 /** Assign only the exercise needed now. The client gets her own copy. */
@@ -35,6 +36,7 @@ export const assign = mutation({
       linkUrl: link(args.linkUrl, "Worksheet link"),
       assignedAt: Date.now(),
     });
+    await syncClientChecklists(ctx, args.clientId);
     await logActivity(ctx, viewer, "worksheet.assigned", `Assigned "${template.title}" to ${client.preferredName}`, args.clientId, id);
     return id;
   },

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { bad, link, logActivity, notFound, requireTeam, text } from "./lib/auth";
+import { applyIntake, syncClientChecklists } from "./lib/automation";
 import { ASSESSMENT_KINDS } from "./lib/defaults";
 
 const kind = v.union(
@@ -34,6 +35,7 @@ export const assign = mutation({
       externalUrl: link(args.externalUrl, "Assessment link"),
       assignedAt: Date.now(),
     });
+    await syncClientChecklists(ctx, args.clientId);
     await logActivity(ctx, viewer, "assessment.assigned", `Assigned ${def.title.toLowerCase()} to ${client.preferredName}`, args.clientId, id);
     return id;
   },
@@ -62,6 +64,7 @@ export const recordAnswers = mutation({
       status: "completed",
       completedAt: a.completedAt ?? Date.now(),
     });
+    await applyIntake(ctx, a, answers);
     await logActivity(ctx, viewer, "assessment.recorded", `Recorded answers for ${a.title.toLowerCase()}`, a.clientId, args.id);
   },
 });
@@ -73,6 +76,7 @@ export const markReviewed = mutation({
     const a = await ctx.db.get(args.id);
     if (!a) notFound("Assessment");
     await ctx.db.patch(args.id, { reviewedAt: Date.now() });
+    await syncClientChecklists(ctx, a.clientId);
   },
 });
 

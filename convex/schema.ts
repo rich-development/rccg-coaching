@@ -166,7 +166,31 @@ export default defineSchema({
     officeAddress: v.string(),
     weeklySessionCapacity: v.number(),
     aiEnabled: v.boolean(),
+    // Tamika's own policies, shown to clients with the agreement.
+    agreementTerms: v.optional(v.string()),
   }).index("by_key", ["key"]),
+
+  // Editable coaching guides shown in the Library.
+  guides: defineTable({
+    key: v.string(),
+    title: v.string(),
+    body: v.string(),
+    sort: v.number(),
+  }).index("by_key", ["key"]),
+
+  // Files kept inside the app. "shared" appears in the client's portal.
+  // "private" is for the team members with the coaching permission only.
+  files: defineTable({
+    clientId: v.id("clients"),
+    storageId: v.id("_storage"),
+    name: v.string(),
+    size: v.number(),
+    contentType: v.string(),
+    visibility: v.union(v.literal("shared"), v.literal("private")),
+    uploadedBy: v.union(v.literal("team"), v.literal("client")),
+    uploaderName: v.string(),
+    createdAt: v.number(),
+  }).index("by_client", ["clientId", "createdAt"]),
 
   services: defineTable({
     key: v.string(),
@@ -188,6 +212,10 @@ export default defineSchema({
     trackNote: v.string(),
     active: v.boolean(),
     sort: v.number(),
+    // Workbook pages assigned in this order, one after each session.
+    worksheetOrder: v.optional(v.array(v.string())),
+    // Days between automatic check-ins. 0 or missing means none.
+    checkinEveryDays: v.optional(v.number()),
   }).index("by_key", ["key"]),
 
   clients: defineTable({
@@ -228,6 +256,7 @@ export default defineSchema({
     accessNote: v.optional(v.string()),
     userId: v.optional(v.id("users")),
     interestedInCoaching: v.optional(v.boolean()),
+    intakeAppliedAt: v.optional(v.number()),
     archived: v.boolean(),
     createdAt: v.number(),
     enrolledAt: v.optional(v.number()),
@@ -269,6 +298,13 @@ export default defineSchema({
       v.literal("signed"),
     ),
     agreementUrl: v.optional(v.string()),
+    // Click-to-accept in the portal: the exact text she accepted, the name
+    // she typed as her signature, and when.
+    agreementAcceptedText: v.optional(v.string()),
+    agreementSignature: v.optional(v.string()),
+    agreementAcceptedAt: v.optional(v.number()),
+    // Automatic check-ins and workbook pages. Missing means on.
+    automationOff: v.optional(v.boolean()),
     // Permissions tracked separately
     recordingPermission: permission,
     transcriptionPermission: permission,
