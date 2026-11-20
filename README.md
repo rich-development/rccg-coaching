@@ -94,12 +94,17 @@ address. The loader refuses to run if real client records already exist.
 
 ### 5. Deploy
 
-On Netlify, set the build command to `npx convex deploy --cmd 'npm run build'`
-and add these environment variables: `CONVEX_DEPLOY_KEY` (from the Convex
-dashboard), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and
-`NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`. Set `CLERK_FRONTEND_API_URL` and
-`CLERK_SECRET_KEY` on the production Convex deployment too, plus `SITE_URL`
-so invitation links point at the live site.
+**Preview (current setup).** Netlify builds the site with `npm run build` and
+points at the Convex dev deployment. Add these in Netlify's environment
+variables: `NEXT_PUBLIC_CONVEX_URL` (your dev deployment URL),
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and
+`NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in`. Keep pushing backend changes with
+`npx convex dev`. A backend change is not live until you do.
+
+**Production (later).** Change the build command in `netlify.toml` to
+`npx convex deploy --cmd 'npm run build'`, add `CONVEX_DEPLOY_KEY` from the
+Convex dashboard, and set `CLERK_FRONTEND_API_URL`, `CLERK_SECRET_KEY`, and
+`SITE_URL` on the production Convex deployment.
 
 ### 6. Optional: AI drafting (this one costs money)
 
