@@ -22,6 +22,25 @@ export default function Home() {
     }, 8000);
     return () => clearTimeout(timer);
   }, [loading, convex]);
+  // Clerk says signed in, but the database did not accept it. Read the two
+  // public fields of the sign-in token that Convex checks, to show the mismatch.
+  const rejected = !loading && !signedIn && clerk.isLoaded && clerk.isSignedIn === true;
+  const getToken = clerk.getToken;
+  const [token, setToken] = useState<{ iss: string; aud: string } | null>(null);
+  useEffect(() => {
+    if (!rejected) return;
+    let cancelled = false;
+    getToken()
+      .then((jwt) => {
+        if (cancelled || !jwt) return;
+        const payload = JSON.parse(atob(jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+        setToken({ iss: String(payload.iss ?? "missing"), aud: payload.aud ? String(payload.aud) : "missing" });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [rejected, getToken]);
   const convexHost = (process.env.NEXT_PUBLIC_CONVEX_URL ?? "").replace(/^https?:\/\//, "");
   const router = useRouter();
   const role = me?.role;
@@ -62,6 +81,34 @@ export default function Home() {
               </div>
             )}
           </>
+        ) : rejected ? (
+          <div className="mt-8 rounded-lg border border-clay/40 bg-clay-50 p-5 text-left text-sm">
+            <h1 className="text-lg text-clay">Signed in, but the database did not accept it</h1>
+            <p className="mt-2 text-soft">Clerk signed you in. Convex then refused the sign-in token. This is a setup mismatch between Clerk and Convex, not a problem with your password.</p>
+            <dl className="mt-3 space-y-1 text-[13px] text-ink">
+              <div>Database address: {convexHost || "not set"}</div>
+              <div>Token issuer: {token?.iss ?? "reading\u2026"}</div>
+              <div>Token audience: {token?.aud ?? "reading\u2026"}</div>
+            </dl>
+            <ul className="mt-3 list-disc space-y-1.5 pl-5 text-[13px] text-soft">
+              {token?.aud !== "convex" && (
+                <li>
+                  <strong className="text-ink">The audience should be &ldquo;convex&rdquo;.</strong> In the Clerk dashboard, turn on the Convex integration, then sign out and back in.
+                </li>
+              )}
+              <li>
+                On the Convex deployment, <strong className="text-ink">CLERK_FRONTEND_API_URL must equal the token issuer exactly</strong>: same address, https included, no slash at the end.
+              </li>
+              <li>After changing it, run npx convex dev so the sign-in settings are pushed, then reload this page.</li>
+            </ul>
+            <div className="mt-4">
+              <SignOutButton>
+                <button type="button" className="rounded-md border border-line bg-paper px-3.5 py-2 text-sm font-medium hover:bg-mist">
+                  Sign out
+                </button>
+              </SignOutButton>
+            </div>
+          </div>
         ) : !signedIn ? (
           <>
             <p className="mt-6 text-[1.05rem] leading-relaxed text-soft">
