@@ -37,6 +37,8 @@ export function useViewer() {
     signedIn: isAuthenticated,
     me: isAuthenticated ? (me ?? null) : null,
     problem,
+    // Which step the loading screen is waiting on, for troubleshooting.
+    waitingOn: isLoading ? ("handshake" as const) : isAuthenticated && !ready ? ("identity" as const) : ("role" as const),
   };
 }
 

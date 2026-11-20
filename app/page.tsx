@@ -1,14 +1,28 @@
 "use client";
 
-import { SignOutButton } from "@clerk/nextjs";
+import { SignOutButton, useAuth } from "@clerk/nextjs";
+import { useConvex } from "convex/react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { isTeamRole, useViewer } from "@/components/gate";
 import { LinkButton } from "@/components/ui";
 
 export default function Home() {
-  const { loading, signedIn, me, problem } = useViewer();
+  const { loading, signedIn, me, problem, waitingOn } = useViewer();
+  const convex = useConvex();
+  const clerk = useAuth();
+  // If loading drags on, show what is and is not connected instead of waiting forever.
+  const [stuck, setStuck] = useState<{ connected: boolean; everConnected: boolean } | null>(null);
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => {
+      const state = convex.connectionState();
+      setStuck({ connected: state.isWebSocketConnected, everConnected: state.hasEverConnected });
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [loading, convex]);
+  const convexHost = (process.env.NEXT_PUBLIC_CONVEX_URL ?? "").replace(/^https?:\/\//, "");
   const router = useRouter();
   const role = me?.role;
   const team = isTeamRole(role);
@@ -24,7 +38,30 @@ export default function Home() {
       <div className="w-full max-w-md text-center">
         <Image src="/brand/tr-stacked-dark.png" alt="Tamika Rich" width={640} height={639} priority className="mx-auto h-auto w-56" />
         {loading || team || role === "client" ? (
-          <p className="mt-8 text-sm text-soft">Opening your workspace&hellip;</p>
+          <>
+            <p className="mt-8 text-sm text-soft">Opening your workspace&hellip;</p>
+            {loading && stuck && (
+              <div className="mt-6 rounded-lg border border-clay/40 bg-clay-50 p-4 text-left text-[13px]">
+                <div className="font-medium text-clay">This is taking too long. Here is what the app sees.</div>
+                <dl className="mt-2 space-y-1 text-ink">
+                  <div>Database address: {convexHost || "not set"}</div>
+                  <div>Connected to the database: {stuck.connected ? "yes" : stuck.everConnected ? "it was, but dropped" : "no, never"}</div>
+                  <div>Signed in with Clerk: {clerk.isLoaded ? (clerk.isSignedIn ? "yes" : "no") : "Clerk has not loaded"}</div>
+                  <div>
+                    Waiting on:{" "}
+                    {waitingOn === "handshake" ? "the database accepting your Clerk sign-in" : waitingOn === "identity" ? "the identity check with Clerk (users.sync)" : "your role (users.me)"}
+                  </div>
+                </dl>
+                <p className="mt-2 text-soft">
+                  {!stuck.everConnected
+                    ? "The site cannot reach Convex. In Netlify, NEXT_PUBLIC_CONVEX_URL should look like https://your-name-123.convex.cloud (not .convex.site and not a dashboard link). It is baked in at build time, so redeploy after fixing it."
+                    : waitingOn === "handshake"
+                      ? "Convex is reachable but has not accepted the sign-in. Check that CLERK_FRONTEND_API_URL on the Convex deployment matches Clerk\u2019s Frontend API URL exactly, and that the Convex integration is turned on in Clerk."
+                      : "Convex is reachable and accepted the sign-in, but a backend function has not answered. Run npx convex dev to push the latest backend, then reload."}
+                </p>
+              </div>
+            )}
+          </>
         ) : !signedIn ? (
           <>
             <p className="mt-6 text-[1.05rem] leading-relaxed text-soft">
