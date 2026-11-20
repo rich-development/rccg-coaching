@@ -144,6 +144,25 @@ Each draft is one API call billed to the Anthropic account behind the key.
 Names, business names, emails, and phone numbers are removed before anything is
 sent. Without a key, the preparation brief built from the record still works.
 
+## Keeping the site and the database in step
+
+Netlify rebuilds the site on every push to `main`. The Convex functions are a
+separate push. If the site is newer than the functions, pages that use new
+functions show "The database needs an update".
+
+Two ways to keep them together:
+
+- By hand: `git pull`, then `npx convex dev`, after each update.
+- Automatic (recommended): in the Convex dashboard open the deployment's
+  Settings, generate a deploy key, and add it in Netlify as the environment
+  variable `CONVEX_DEPLOY_KEY`. Every Netlify build then pushes the functions
+  before it builds the site (`scripts/netlify-build.sh`). If that push fails,
+  the build fails and the previous site stays live.
+
+If `git pull` stops with "local changes to convex/_generated would be
+overwritten", run `git checkout -- convex/_generated` and pull again. Those
+files are rebuilt by `npx convex dev`.
+
 ## Managing access
 
 Everything is on the **Access** page (and on each client's record).

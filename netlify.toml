@@ -1,12 +1,12 @@
-# Preview setup: Netlify builds the site only. It points at whatever Convex
-# deployment NEXT_PUBLIC_CONVEX_URL names (the dev deployment for now).
-# Backend changes are pushed separately with `npx convex dev`.
-#
-# For production later, change the command to:
-#   npx convex deploy --cmd 'npm run build'
-# and add CONVEX_DEPLOY_KEY in Netlify.
+# Netlify builds the site. If CONVEX_DEPLOY_KEY is set in Netlify, the build
+# also pushes the Convex functions first, so the site and the database can
+# never be out of step:
+#   key starting with "dev:"  -> pushed to that dev deployment
+#   any other key (prod)      -> npx convex deploy
+# With no key, only the site is built and the backend must be pushed by hand
+# with `npx convex dev`.
 [build]
-  command = "npm run build"
+  command = "sh scripts/netlify-build.sh"
   publish = ".next"
 
 [build.environment]

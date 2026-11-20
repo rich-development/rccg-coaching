@@ -76,6 +76,9 @@ export function errorMessage(e: unknown): string {
     const data = (e as { data?: { message?: string } }).data;
     if (data?.message) return data.message;
   }
+  if (e instanceof Error && /Could not find public function/i.test(e.message)) {
+    return "This part of the site is being updated. Nothing was changed. Try again in a few minutes.";
+  }
   return "Something went wrong. Nothing was changed. Try again.";
 }
 
