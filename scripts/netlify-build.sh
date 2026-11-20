@@ -7,7 +7,7 @@ case "$CONVEX_DEPLOY_KEY" in
     ;;
   dev:*)
     echo "Pushing Convex functions to the dev deployment, then building."
-    npx convex dev --once
+    npx convex dev --once --tail-logs disable
     npm run build
     ;;
   *)
