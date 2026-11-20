@@ -5,7 +5,7 @@ import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { useCan } from "@/components/role";
-import { Badge, Button, Empty, Field, Input, Loading, PageTitle, Panel, useAct } from "@/components/ui";
+import { Badge, Button, Empty, Field, Input, Loading, PageTitle, Panel, TextArea, useAct } from "@/components/ui";
 
 type Settings = FunctionReturnType<typeof api.settings.get>;
 
@@ -15,7 +15,7 @@ function PracticeForm({ s }: { s: Settings }) {
   const [v, setV] = useState({
     coachName: s.coachName, businessName: s.businessName, timeZone: s.timeZone, responseWindow: s.responseWindow, supportChannel: s.supportChannel,
     discoveryLink: s.discoveryLink, schedulingLink: s.schedulingLink, assessmentsLink: s.assessmentsLink, officeAddress: s.officeAddress,
-    weeklySessionCapacity: String(s.weeklySessionCapacity), aiEnabled: s.aiEnabled,
+    weeklySessionCapacity: String(s.weeklySessionCapacity), aiEnabled: s.aiEnabled, agreementTerms: s.agreementTerms ?? "",
   });
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV((old) => ({ ...old, [k]: e.target.value }));
   const save = () => act(() => update({ ...v, weeklySessionCapacity: Number(v.weeklySessionCapacity) }), "Settings saved");
@@ -31,6 +31,12 @@ function PracticeForm({ s }: { s: Settings }) {
           <Field label="Default response window" hint="Shown to clients next to their messages."><Input value={v.responseWindow} onChange={set("responseWindow")} /></Field>
           <Field label="Office address" className="sm:col-span-2"><Input value={v.officeAddress} onChange={set("officeAddress")} /></Field>
         </div>
+      </Panel>
+      <Panel title="Your policies">
+        <p className="mb-3 text-sm text-soft">Clients read these with their agreement and sign in the portal. Cover what you have decided on: missed and rescheduled sessions, refunds, unused sessions, renewals, and how long you keep their materials. Have a lawyer look over the wording before you rely on it.</p>
+        <Field label="Policies shown with every agreement">
+          <TextArea rows={6} value={v.agreementTerms} onChange={set("agreementTerms")} maxLength={6000} placeholder={"Missed sessions: ...\nRescheduling: ...\nRefunds: ..."} />
+        </Field>
       </Panel>
       <Panel title="Links to your other tools">
         <div className="grid gap-3">

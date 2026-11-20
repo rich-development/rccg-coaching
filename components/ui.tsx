@@ -337,7 +337,7 @@ export function KeyValue({ label, children }: { label: string; children: ReactNo
   return (
     <div className="grid grid-cols-[minmax(5.5rem,32%)_1fr] gap-3 py-1.5 text-sm">
       <dt className="text-soft">{label}</dt>
-      <dd className="min-w-0 break-words text-ink">{children || <span className="text-faint">Not recorded</span>}</dd>
+      <dd className="min-w-0 whitespace-pre-wrap break-words text-ink">{children || <span className="text-faint">Not recorded</span>}</dd>
     </div>
   );
 }

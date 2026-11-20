@@ -5,8 +5,10 @@ import type { FunctionReturnType } from "convex/server";
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
-import { Badge, Button, Empty, Field, LinkButton, Loading, Meter, Panel, SafeLink, TextArea, useAct } from "@/components/ui";
-import { dateTime, dayLabel, isoLabel, timeOnly, todayIso } from "@/lib/format";
+import { PortalFiles } from "@/components/files";
+import { RichText } from "@/components/rich";
+import { Badge, Button, Empty, Field, Input, LinkButton, Loading, Meter, Panel, SafeLink, TextArea, useAct } from "@/components/ui";
+import { dateTime, dayLabel, isoLabel, shortDate, timeOnly, todayIso } from "@/lib/format";
 
 type Home = FunctionReturnType<typeof api.portal.home>;
 type Action = Home["actions"][number];
@@ -76,10 +78,73 @@ function Testimonial({ t }: { t: Home["testimonialRequests"][number] }) {
   );
 }
 
+function Agreement({ text, serviceName }: { text: string; serviceName: string }) {
+  const accept = useMutation(api.portal.acceptAgreement);
+  const { act, busy } = useAct();
+  const [typedName, setTypedName] = useState("");
+  const [agreed, setAgreed] = useState(false);
+  return (
+    <Panel title={`Your ${serviceName} agreement`} tone="shared">
+      <p className="mb-3 text-sm text-soft">Please read this before your first session. If anything looks wrong, message Tamika before you sign.</p>
+      <div className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-md border border-line bg-mist p-4 text-sm leading-relaxed">{text}</div>
+      <label className="mt-4 flex items-start gap-2.5 text-sm">
+        <input type="checkbox" className="mt-1 h-4 w-4 accent-[#1d4a43]" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+        <span>I have read this agreement and I agree to it.</span>
+      </label>
+      <Field label="Type your full name to sign" className="mt-3 max-w-sm">
+        <Input value={typedName} onChange={(e) => setTypedName(e.target.value)} maxLength={160} autoComplete="name" className="display !text-lg" />
+      </Field>
+      <div className="mt-3">
+        <Button tone="primary" disabled={busy || !agreed || typedName.trim().length < 3} onClick={() => act(() => accept({ typedName, agreed }), "Thank you. Your agreement is signed.")}>
+          Sign and accept
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+function Consent({ current, onDone }: { current?: { recording: boolean; transcription: boolean; ai: boolean }; onDone?: () => void }) {
+  const answer = useMutation(api.portal.answerConsent);
+  const { act, busy } = useAct();
+  const [v, setV] = useState(current ?? { recording: false, transcription: false, ai: false });
+  const row = (key: keyof typeof v, question: string, detail: string, disabled = false) => (
+    <fieldset className="border-t border-line py-3 first:border-t-0" disabled={disabled}>
+      <legend className="sr-only">{question}</legend>
+      <div className={`flex flex-wrap items-start justify-between gap-3 ${disabled ? "opacity-50" : ""}`}>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">{question}</div>
+          <div className="text-[13px] text-soft">{detail}</div>
+        </div>
+        <div className="flex gap-1 rounded-md border border-line p-0.5 text-sm">
+          {[true, false].map((yes) => (
+            <button key={String(yes)} type="button" onClick={() => setV({ ...v, [key]: yes })} aria-pressed={v[key] === yes} className={`rounded px-3 py-1 ${v[key] === yes ? "bg-ink text-white" : "text-soft"}`}>
+              {yes ? "Yes" : "No"}
+            </button>
+          ))}
+        </div>
+      </div>
+    </fieldset>
+  );
+  return (
+    <Panel title="Three quick choices about your sessions" tone="shared">
+      <p className="mb-1 text-sm text-soft">These are for your one-on-one sessions with Tamika. Any answer is fine, and you can change them later.</p>
+      {row("recording", "May Tamika record your sessions?", "Recordings help her check details. They are not shared with anyone.")}
+      {row("transcription", "May a written transcript be kept?", "A text copy of what was said, kept with your private record.", !v.recording)}
+      {row("ai", "May AI help draft her notes and recaps?", "Your name and contact details are removed first. Tamika reviews everything before you see it.")}
+      <div className="mt-3">
+        <Button tone="primary" disabled={busy} onClick={async () => { if (await act(() => answer({ ...v, transcription: v.recording && v.transcription }), "Your choices are saved.")) onDone?.(); }}>
+          Save my choices
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
 const permissionText = { not_asked: "Not asked yet", granted: "You said yes", declined: "You said no" } as const;
 
 export default function PortalHome() {
   const home = useQuery(api.portal.home, {});
+  const [changing, setChanging] = useState(false);
   if (!home) return <Loading />;
   const next = home.upcoming[0];
   const e = home.engagement;
@@ -98,6 +163,13 @@ export default function PortalHome() {
       </header>
 
       {home.testimonialRequests.map((t) => <Testimonial key={t._id} t={t} />)}
+      {e && !e.agreementAccepted && <Agreement text={e.agreementText} serviceName={e.serviceName} />}
+      {e && (!e.consentAnswered || changing) && (
+        <Consent
+          current={e.consentAnswered ? { recording: e.recordingPermission === "granted", transcription: e.transcriptionPermission === "granted", ai: e.aiPermission === "granted" } : undefined}
+          onDone={() => setChanging(false)}
+        />
+      )}
 
       <section className="rounded-lg border border-line border-l-4 border-l-gold-500 bg-gold-50 p-5">
         <h2 className="text-[1.15rem]">Your next session</h2>
@@ -161,7 +233,7 @@ export default function PortalHome() {
 
       {home.latestRecap && (
         <Panel title={`Notes from session ${home.latestRecap.number}`} aside={<Link href="/portal/recaps" className="text-sm text-pine underline underline-offset-2">All session notes ({home.recapCount})</Link>}>
-          <p className="whitespace-pre-wrap text-[0.95rem] leading-relaxed">{home.latestRecap.body}</p>
+          <RichText text={home.latestRecap.body} className="text-[0.95rem] leading-relaxed" />
         </Panel>
       )}
 
@@ -180,15 +252,30 @@ export default function PortalHome() {
               {e.paymentLink && (
                 <p className="mt-3"><LinkButton href={e.paymentLink} tone="gold" small external>Make a payment</LinkButton></p>
               )}
-              {e.agreementUrl && <p className="mt-2"><SafeLink href={e.agreementUrl}>Your service agreement</SafeLink></p>}
+              {e.agreementUrl && <p className="mt-2"><SafeLink href={e.agreementUrl}>Agreement document</SafeLink></p>}
               {home.sharedFolderUrl && <p className="mt-1"><SafeLink href={home.sharedFolderUrl}>Your shared folder</SafeLink></p>}
             </div>
           </div>
           <p className="mt-5 border-t border-line pt-3 text-[13px] text-soft">
-            Your choices for one-on-one sessions. Recording: {permissionText[e.recordingPermission].toLowerCase()}. Written transcript: {permissionText[e.transcriptionPermission].toLowerCase()}. AI help with notes: {permissionText[e.aiPermission].toLowerCase()}. You can change any of these by telling Tamika.
+            Your choices for one-on-one sessions. Recording: {permissionText[e.recordingPermission].toLowerCase()}. Written transcript: {permissionText[e.transcriptionPermission].toLowerCase()}. AI help with notes: {permissionText[e.aiPermission].toLowerCase()}.{" "}
+            {e.consentAnswered && !changing && (
+              <button type="button" className="text-pine underline underline-offset-2" onClick={() => { setChanging(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+                Change my choices
+              </button>
+            )}
           </p>
+          {e.agreementAccepted && (
+            <details className="mt-3 text-[13px]">
+              <summary className="cursor-pointer text-pine underline underline-offset-2">
+                Your signed agreement{e.agreementAcceptedAt ? `, signed ${shortDate(e.agreementAcceptedAt)}` : ""}{e.agreementSignature ? ` as ${e.agreementSignature}` : ""}
+              </summary>
+              <div className="mt-2 whitespace-pre-wrap rounded-md bg-mist p-3 text-soft">{e.agreementText}</div>
+            </details>
+          )}
         </Panel>
       )}
+
+      <PortalFiles />
 
       {home.coworking.length > 0 && (
         <Panel title="Co-working">

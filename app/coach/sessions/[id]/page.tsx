@@ -9,6 +9,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ActionRow, AddAction } from "@/components/action-list";
 import { Badge, Button, Empty, Field, Input, KeyValue, LinkButton, Loading, Meter, Panel, SafeLink, TextArea, useAct, Visibility } from "@/components/ui";
+import { Composer, countBlanks, RichText } from "@/components/rich";
 import { dateTime, isoLabel, STAGE_LABEL, todayIso, words } from "@/lib/format";
 
 type Workspace = NonNullable<FunctionReturnType<typeof api.sessions.workspace>>;
@@ -266,11 +267,11 @@ function Recap({ ws, prep }: { ws: Workspace; prep: Prep | undefined }) {
           </div>
         </div>
       )}
-      <TextArea value={body} onChange={(e) => setBody(e.target.value)} rows={8} maxLength={8000} placeholder="Decisions and commitments only. Not your private notes." aria-label="Recap" />
-      <p className="mt-2 text-[13px] text-soft">Anything in [brackets] is a detail still missing. Fill it in or remove it. The recap cannot be shared with a bracket left in.</p>
+      <Composer value={body} onChange={setBody} minRows={8} placeholder="Decisions and commitments only. Not your private notes." label="Recap" />
+      <p className="mt-2 text-[13px] text-soft">A highlighted blank is a detail still missing. Fill it in or remove it. Sharing also marks the session completed.</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button small disabled={busy} onClick={() => act(() => saveDraft({ id: ws.session._id, draft: body }), "Draft saved")}>Save draft</Button>
-        <Button small tone="primary" disabled={busy || !body.trim()} onClick={() => act(() => approve({ id: ws.session._id, body }), `Recap shared with ${name}`)}>
+        <Button small tone="primary" disabled={busy || !body.trim() || countBlanks(body) > 0} onClick={() => act(() => approve({ id: ws.session._id, body }), `Recap shared with ${name}`)}>
           {ws.session.recapShared ? "Approve and share the update" : "Approve and share with her"}
         </Button>
         {ws.session.recapShared && (
@@ -416,7 +417,7 @@ export default function SessionWorkspace() {
             <Panel title={`Last time (session ${ws.previous.number})`}>
               <p className="text-[13px] text-soft">{dateTime(ws.previous.scheduledAt)}</p>
               {ws.previous.priority && <p className="mt-1 text-sm">Priority: {ws.previous.priority}</p>}
-              {ws.previous.recapShared && <p className="mt-2 whitespace-pre-wrap text-[13px] text-soft">{ws.previous.recapShared}</p>}
+              {ws.previous.recapShared && <RichText text={ws.previous.recapShared} className="mt-2 text-[13px] text-soft" />}
               <Link href={`/coach/sessions/${ws.previous._id}`} className="mt-2 inline-block text-[13px] text-pine underline underline-offset-2">Open that session</Link>
             </Panel>
           )}

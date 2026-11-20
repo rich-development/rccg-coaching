@@ -26,6 +26,28 @@ co-working sessions.
 | Reports | Discovery-to-enrollment, revenue, service uptake, capacity, session outcomes, commitment follow-through, client progress, co-working, retention, reply time. CSV download. |
 | Client portal | Her next session and Meet link, commitments, assigned work, approved recaps, messages, session balance, payment link. Nothing else. |
 
+## What runs on its own
+
+Built to cut admin work. Each of these happens without anyone clicking:
+
+- The public inquiry form at `/start` puts a new person in the Discovery
+  pipeline with a follow-up reminder. Share that link anywhere.
+- Inviting a client assigns the intake. Her answers fill her record.
+- The portal asks her to accept the agreement (checkbox plus typed name) and
+  to answer the recording, transcript, and AI questions. The onboarding
+  checklist ticks itself as those are done.
+- Workbook pages go out in the order set per service in the Library. The next
+  page follows each completed session.
+- Check-ins are assigned on the schedule set per service (daily job, 14:00 UTC).
+- Approving a recap marks the session complete.
+- Message templates fill in name, goal, service, session time, and link from
+  the record. Blanks that are left are highlighted and block sending.
+- Files are uploaded in the app (20 MB each), shared or private. No Drive
+  folders to create.
+
+Tamika can add services, workbook pages, message templates, and coaching
+guides in the Library.
+
 ## Setup (about 20 minutes)
 
 Nothing below costs money. Convex, Clerk, and Netlify all have free tiers that
@@ -203,7 +225,6 @@ still needs a check:
 | Rich Assessments | Link out, or have the client answer in the portal. Record results by hand if needed | Sync assignment and results |
 | Stripe | Paste a payment link. Confirm in Stripe, then record it | Webhook-confirmed payment status |
 | Email | Templates to copy. No emails are sent by the app | Notification emails with no private details (Resend) |
-| Google Drive | Shared and private folder links | Create folders on onboarding |
 
 ## Decisions to confirm before enrolling real clients
 
@@ -218,6 +239,7 @@ and who can access client materials and for how long.
 app/coach/      Tamika's workspace
 app/portal/     Client portal
 app/cowork/     Public co-working registration
+app/start/      Public inquiry form
 components/     Shared interface pieces
 convex/         Database schema and every server function
 convex/lib/     Access control, Clerk server calls, Starter Kit and Workbook defaults

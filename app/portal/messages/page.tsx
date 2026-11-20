@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { Button, Empty, Loading, TextArea, useAct } from "@/components/ui";
+import { RichText } from "@/components/rich";
 import { dateTime } from "@/lib/format";
 
 export default function PortalMessages() {
@@ -42,7 +43,7 @@ export default function PortalMessages() {
             <div key={m._id} className={`flex ${m.from === "client" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[85%] rounded-lg px-3.5 py-2.5 ${m.from === "client" ? "bg-gold-50" : "bg-pine-50"}`}>
                 {m.ref && <div className="mb-1 text-xs text-gold-700">About: {m.ref.label}</div>}
-                <div className="whitespace-pre-wrap text-[0.95rem]">{m.body}</div>
+                <RichText text={m.body} className="text-[0.95rem]" />
                 <div className="mt-1 text-xs text-soft">{m.from === "client" ? "You" : m.authorName}, {dateTime(m.createdAt)}</div>
               </div>
             </div>

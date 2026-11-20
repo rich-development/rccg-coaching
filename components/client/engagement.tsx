@@ -5,7 +5,7 @@ import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge, Button, Empty, Field, Input, KeyValue, Meter, Modal, Panel, SafeLink, Select, TextArea, useAct, Visibility } from "@/components/ui";
-import { isoLabel, money, todayIso, words } from "@/lib/format";
+import { isoLabel, money, shortDate, todayIso, words } from "@/lib/format";
 import { useCan } from "@/components/role";
 import type { Detail, Engagement } from "./types";
 
@@ -105,11 +105,22 @@ function Terms({ e, isCoach }: { e: Engagement; isCoach: boolean }) {
         </KeyValue>
         <KeyValue label="Payment plan">{e.paymentArrangement}</KeyValue>
         <KeyValue label="Agreement">
-          <span className="capitalize">{words(e.agreementStatus)}</span> {e.agreementUrl && <SafeLink href={e.agreementUrl}>Open</SafeLink>}
+          {e.agreementAcceptedAt ? (
+            <>Accepted in her portal on {shortDate(e.agreementAcceptedAt)}, signed &ldquo;{e.agreementSignature}&rdquo;</>
+          ) : (
+            <span className="capitalize">{e.agreementStatus === "signed" ? "Signed" : "Waiting for her to accept in her portal"}</span>
+          )}{" "}
+          {e.agreementUrl && <SafeLink href={e.agreementUrl}>Open document</SafeLink>}
         </KeyValue>
         {e.scopeNote && <KeyValue label="Scope note">{e.scopeNote}</KeyValue>}
       </dl>
-      <p className="mt-2 text-[13px] text-soft">Hands-on setup, website work, or ongoing administration need a separate scope and price.</p>
+      {e.agreementAcceptedText && (
+        <details className="mt-2 text-[13px]">
+          <summary className="cursor-pointer text-pine underline underline-offset-2">Read what she accepted</summary>
+          <div className="mt-2 whitespace-pre-wrap rounded-md bg-mist p-3 text-soft">{e.agreementAcceptedText}</div>
+        </details>
+      )}
+      <p className="mt-2 text-[13px] text-soft">She reads and signs this in her portal. Your policies come from Settings. Use the link field only if you send a separate document.</p>
       <Modal open={open} onClose={() => setOpen(false)} title="Edit agreed terms" wide>
         <p className="mb-4 text-sm text-soft">Only change these when you and the client have agreed to the change.</p>
         <form
@@ -146,7 +157,7 @@ function Terms({ e, isCoach }: { e: Engagement; isCoach: boolean }) {
           <Field label="Start date"><Input type="date" value={v.startDate} onChange={set("startDate")} /></Field>
           <Field label="End date"><Input type="date" value={v.endDate} onChange={set("endDate")} /></Field>
           <Field label="Response window"><Input value={v.responseWindow} onChange={set("responseWindow")} /></Field>
-          <Field label="Agreement">
+          <Field label="Agreement" hint="Changes on its own when she signs in her portal.">
             <Select value={v.agreementStatus} onChange={(ev) => setV((old) => ({ ...old, agreementStatus: ev.target.value as typeof v.agreementStatus }))}>
               <option value="not_sent">Not sent</option>
               <option value="sent">Sent</option>
@@ -222,7 +233,7 @@ function Permissions({ e }: { e: Engagement }) {
   );
   return (
     <Panel title="Recording, transcript, and AI permissions">
-      <p className="mb-3 text-[13px] text-soft">Three separate choices, for one-on-one sessions only. Co-working is never recorded or transcribed.</p>
+      <p className="mb-3 text-[13px] text-soft">She answers these herself in her portal. Change them here only if she tells you directly. Co-working is never recorded or transcribed.</p>
       <div className="grid gap-3 sm:grid-cols-3">
         {row("recordingPermission", "Recording", "May sessions be recorded?")}
         {row("transcriptionPermission", "Transcript", "May a transcript be kept?")}
@@ -365,6 +376,8 @@ export function EngagementTab({ data, isCoach }: { data: Detail; isCoach: boolea
   const canPay = useCan("payments");
   const toggle = useMutation(api.engagements.toggleChecklist);
   const setStatus = useMutation(api.engagements.setStatus);
+  const renew = useMutation(api.engagements.renew);
+  const setAutomation = useMutation(api.engagements.setAutomation);
   const { act, busy } = useAct();
   const [starting, setStarting] = useState<{ previous?: Engagement } | null>(null);
   const current =
@@ -415,6 +428,11 @@ export function EngagementTab({ data, isCoach }: { data: Detail; isCoach: boolea
                 ) : (
                   <Button small disabled={busy} onClick={() => act(() => setStatus({ id: e._id, status: "paused" }), "Engagement paused")}>Pause</Button>
                 )}
+                {e.status === "active" && (
+                  <Button small tone="gold" disabled={busy} onClick={() => { if (window.confirm(`Close this cycle and start a new ${e.serviceName} cycle today, on the same terms?`)) act(async () => { await renew({ id: e._id }); setSelected(null); }, "Renewed for another cycle"); }}>
+                    Renew for another cycle
+                  </Button>
+                )}
                 <Button small tone="danger" disabled={busy} onClick={() => { if (window.confirm("Cancel this engagement? Her history is kept.")) act(() => setStatus({ id: e._id, status: "cancelled" }), "Engagement cancelled"); }}>
                   Cancel
                 </Button>
@@ -435,7 +453,11 @@ export function EngagementTab({ data, isCoach }: { data: Detail; isCoach: boolea
                   </li>
                 ))}
               </ul>
-              {e.status === "onboarding" && <p className="mt-3 text-[13px] text-soft">The engagement becomes active when every step is done.</p>}
+              <p className="mt-3 text-[13px] text-soft">Steps check themselves off as they happen. {e.status === "onboarding" ? "The engagement becomes active when every step is done." : ""}</p>
+              <label className="mt-3 flex items-start gap-2 border-t border-line pt-3 text-sm">
+                <input type="checkbox" className="mt-1" checked={!e.automationOff} disabled={busy} onChange={(ev) => act(() => setAutomation({ id: e._id, off: !ev.target.checked }), ev.target.checked ? "Automatic check-ins and pages are on" : "Automatic check-ins and pages are off")} />
+                <span>Send her check-ins and the next workbook page automatically</span>
+              </label>
             </Panel>
             <Terms key={`t${e._id}`} e={e} isCoach={canPay} />
             {canPay && <PaymentPanel key={`p${e._id}`} e={e} />}

@@ -158,6 +158,7 @@ export default function PipelinePage() {
         sub="From first inquiry to a decision. Open a card for the call guide and to record the need, your recommendation, and the next contact."
         actions={
           <>
+            <LinkButton href="/start" external>Inquiry form</LinkButton>
             {settings?.discoveryLink && <LinkButton href={settings.discoveryLink} external>Booking link</LinkButton>}
             <LinkButton href="/coach/clients" tone="primary">Add a person</LinkButton>
           </>

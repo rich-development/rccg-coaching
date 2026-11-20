@@ -26,12 +26,15 @@ export function ClientForm({
   busy,
   saveLabel,
   showPrivate,
+  compact,
 }: {
   initial?: Partial<ClientValues>;
   onSave: (values: ClientValues) => void;
   busy: boolean;
   saveLabel: string;
   showPrivate: boolean;
+  /** Just name and email. Her intake fills in the rest. */
+  compact?: boolean;
 }) {
   const [v, setV] = useState<ClientValues>({
     fullName: initial?.fullName ?? "",
@@ -80,6 +83,11 @@ export function ClientForm({
       <Field label="Email" hint="She signs in to her portal with this address.">
         <Input required type="email" value={v.email} onChange={set("email")} maxLength={200} />
       </Field>
+      <Field label="How she found you">
+        <Input value={v.source} onChange={set("source")} maxLength={200} placeholder="Referral, Instagram, co-working" />
+      </Field>
+      {!compact && (
+        <>
       <Field label="Phone">
         <Input value={v.phone} onChange={set("phone")} maxLength={40} />
       </Field>
@@ -109,9 +117,6 @@ export function ClientForm({
       <Field label="Accessibility preferences">
         <TextArea value={v.accessibility} onChange={set("accessibility")} maxLength={2000} />
       </Field>
-      <Field label="How she found you">
-        <Input value={v.source} onChange={set("source")} maxLength={200} placeholder="Referral, Instagram, co-working" />
-      </Field>
       <Field label="Client shared folder link" hint="Google Drive folder she can open.">
         <Input type="url" value={v.sharedFolderUrl} onChange={set("sharedFolderUrl")} placeholder="https://" />
       </Field>
@@ -119,6 +124,8 @@ export function ClientForm({
         <Field label="Private coach folder link" hint="Only you see this. It is never shown in her portal." className="sm:col-span-2">
           <Input type="url" value={v.privateFolderUrl} onChange={set("privateFolderUrl")} placeholder="https://" />
         </Field>
+      )}
+        </>
       )}
       <div className="sm:col-span-2">
         <Button type="submit" tone="primary" disabled={busy}>

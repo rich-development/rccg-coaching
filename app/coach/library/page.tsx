@@ -5,7 +5,10 @@ import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { useCan } from "@/components/role";
+import { AddService, AddTemplate, AddWorksheet, GuideEditor, ServiceAutomation } from "@/components/library-editors";
+import { RichText } from "@/components/rich";
 import { QuestionSet } from "@/components/worksheet";
+import { Composer } from "@/components/rich";
 import { Badge, Button, Field, Input, Loading, Modal, PageTitle, Panel, Tabs, TextArea, useAct } from "@/components/ui";
 
 function ServiceEditor({ s, onClose }: { s: Doc<"services">; onClose: () => void }) {
@@ -38,6 +41,7 @@ function ServiceEditor({ s, onClose }: { s: Doc<"services">; onClose: () => void
         <input type="checkbox" checked={v.active} onChange={(e) => setV((old) => ({ ...old, active: e.target.checked }))} /> Offer this service to new clients
       </label>
       <div className="sm:col-span-2"><Button type="submit" tone="primary" disabled={busy}>Save service</Button></div>
+      {s.kind !== "coworking" && s.kind !== "discovery" && <div className="sm:col-span-2"><ServiceAutomation s={s} /></div>}
     </form>
   );
 }
@@ -74,38 +78,41 @@ function WorksheetEditor({ w, canEdit, onClose }: { w: Doc<"worksheetTemplates">
 
 function TemplateEditor({ t, canEdit, onClose }: { t: Doc<"messageTemplates">; canEdit: boolean; onClose: () => void }) {
   const save = useMutation(api.library.saveTemplate);
+  const remove = useMutation(api.library.removeTemplate);
   const { act, busy } = useAct();
   const [v, setV] = useState({ name: t.name, subject: t.subject, body: t.body });
   return (
     <div className="space-y-3">
       <Field label="Name"><Input value={v.name} disabled={!canEdit} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
       <Field label="Email subject"><Input value={v.subject} disabled={!canEdit} onChange={(e) => setV({ ...v, subject: e.target.value })} /></Field>
-      <Field label="Message" hint="Keep each [bracketed] field. Messages cannot be sent until every bracket is filled in."><TextArea rows={9} value={v.body} disabled={!canEdit} onChange={(e) => setV({ ...v, body: e.target.value })} /></Field>
-      {canEdit && <Button tone="primary" disabled={busy} onClick={async () => { if (await act(() => save({ id: t._id, ...v }), "Template saved")) onClose(); }}>Save template</Button>}
+      {canEdit ? (
+        <div>
+          <div className="mb-1 text-[13px] font-medium">Message</div>
+          <Composer value={v.body} onChange={(body) => setV({ ...v, body })} label="Template message" minRows={8} />
+          <p className="mt-2 text-[13px] text-soft">Highlighted [brackets] are blanks. Most fill themselves from the client&rsquo;s record when you use the template. A message cannot be sent with a blank left in.</p>
+        </div>
+      ) : (
+        <RichText text={v.body} className="rounded-md bg-mist p-3 text-sm" />
+      )}
+      {canEdit && (
+        <div className="flex flex-wrap gap-2">
+          <Button tone="primary" disabled={busy} onClick={async () => { if (await act(() => save({ id: t._id, ...v }), "Template saved")) onClose(); }}>Save template</Button>
+          <Button tone="danger" disabled={busy} onClick={async () => { if (window.confirm(`Remove the ${t.name} template?`) && (await act(() => remove({ id: t._id }), "Template removed"))) onClose(); }}>Remove template</Button>
+        </div>
+      )}
     </div>
   );
 }
-
-const RHYTHM = [
-  ["0 to 10 minutes", "Review wins, actions, and what changed"],
-  ["10 to 15 minutes", "Agree on the outcome for this meeting"],
-  ["15 to 40 minutes", "Explore the obstacle and work through a decision or exercise"],
-  ["40 to 55 minutes", "Choose up to three actions, owners, and dates"],
-  ["55 to 60 minutes", "Ask the client to restate the plan and confirm the next meeting"],
-];
-const JOURNEY = [
-  ["Week 1", "Clarify the starting point and desired change", "One coaching goal and a clear business description"],
-  ["Week 2", "Choose priorities and allocate resources", "A realistic 30-day action plan and weekly schedule"],
-  ["Week 4", "Review action and make one task repeatable", "A usable process and an adjusted plan"],
-  ["Week 6", "Assess progress and plan independent follow-through", "Evidence of progress and the next 30-day plan"],
-];
 
 export default function LibraryPage() {
   const isCoach = useCan("settings");
   const services = useQuery(api.library.services, {});
   const worksheets = useQuery(api.library.worksheets, {});
   const templates = useQuery(api.library.templates, {});
+  const guides = useQuery(api.library.guideList, {});
   const [tab, setTab] = useState("services");
+  const [adding, setAdding] = useState<"service" | "page" | "template" | null>(null);
+  const [guide, setGuide] = useState<{ key: string; title: string; body: string } | "new" | null>(null);
   const [service, setService] = useState<Doc<"services"> | null>(null);
   const [sheet, setSheet] = useState<Doc<"worksheetTemplates"> | null>(null);
   const [template, setTemplate] = useState<Doc<"messageTemplates"> | null>(null);
@@ -115,6 +122,13 @@ export default function LibraryPage() {
       <PageTitle title="Library" sub="Your services, workbook masters, message templates, and coaching guides. Masters stay separate from each client's copy." />
       <Tabs value={tab} onChange={setTab} tabs={[{ key: "services", label: "Services" }, { key: "workbook", label: "Workbook pages" }, { key: "templates", label: "Message templates" }, { key: "guides", label: "Coaching guides" }]} />
 
+      {isCoach && tab !== "guides" && (
+        <div className="mb-4">
+          <Button tone="primary" onClick={() => setAdding(tab === "services" ? "service" : tab === "workbook" ? "page" : "template")}>
+            {tab === "services" ? "Add a service" : tab === "workbook" ? "Add a workbook page" : "Add a message template"}
+          </Button>
+        </div>
+      )}
       {tab === "services" && (
         <div className="overflow-x-auto rounded-lg border border-line bg-paper">
           <table className="w-full min-w-[42rem] text-left text-sm">
@@ -160,7 +174,7 @@ export default function LibraryPage() {
                 <span className="display text-lg">{t.name}</span>
                 <Button small onClick={() => setTemplate(t)}>{isCoach ? "Edit" : "Open"}</Button>
               </div>
-              <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[13px] text-soft">{t.body}</p>
+              <RichText text={t.body} className="mt-1 line-clamp-4 text-[13px] text-soft" />
             </li>
           ))}
           <li className="text-[13px] text-soft">These are drafts for review, not automated messages. Use them from a client&rsquo;s message thread.</li>
@@ -168,34 +182,24 @@ export default function LibraryPage() {
       )}
 
       {tab === "guides" && (
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Panel title="60-minute session rhythm">
-            <ol className="space-y-1.5 text-sm">{RHYTHM.map(([t, what]) => <li key={t} className="grid grid-cols-[8.5rem_1fr] gap-2"><span className="text-soft">{t}</span><span>{what}</span></li>)}</ol>
-            <p className="mt-3 text-[13px] text-soft">90-minute Your Next Step: 10 of context, 10 to agree on the challenge, 45 working, 20 for the action plan, 5 to close. 45-minute Keep Moving: 5 to check progress, 5 to set focus, 25 to work, 10 to agree on action.</p>
-          </Panel>
-          <Panel title="Six-week coaching journey">
-            <ol className="space-y-2.5 text-sm">{JOURNEY.map(([w, focus, leave]) => <li key={w}><span className="font-medium">{w}.</span> {focus}. <span className="text-soft">Leave with: {leave}.</span></li>)}</ol>
-            <p className="mt-3 text-[13px] text-soft">Use weeks 3 and 5 for implementation with the email check-in. She does not need to finish the whole workbook.</p>
-          </Panel>
-          <Panel title="Adapt to her stage">
-            <ul className="space-y-2 text-sm">
-              <li><span className="font-medium">Starting.</span> Existing skills, a clear offer, customer conversations, and a manageable first step.</li>
-              <li><span className="font-medium">Starting over.</span> What to keep, change, or stop before adding more work.</li>
-              <li><span className="font-medium">Pivoting.</span> What changes, what continues, and how to test the new direction with limited resources.</li>
-            </ul>
-          </Panel>
-          <Panel title="When a commitment was not completed">
-            <p className="text-sm">Ask what happened before assigning more work. Was the task unclear, too large, dependent on someone else, or no longer useful? Reduce or revise it together. Record a new next step and date instead of carrying an unrealistic task forward.</p>
-            <p className="mt-3 text-sm">Working principle: let the client do the thinking and make the decisions. Ask useful questions, offer practical options, and help her turn a decision into a repeatable action.</p>
-          </Panel>
-          <Panel title="Keeping scope clear" className="lg:col-span-2">
-            <p className="text-sm">Coaching includes questions, planning, accountability, and guided use of worksheets. Hands-on setup, document production, website work, or ongoing administration need a separate scope and price. Do not promise revenue, funding, or a completed business launch.</p>
-          </Panel>
+        <div>
+          {isCoach && <div className="mb-4"><Button tone="primary" onClick={() => setGuide("new")}>Add a guide</Button></div>}
+          <div className="grid gap-5 lg:grid-cols-2">
+            {(guides ?? []).map((g) => (
+              <Panel key={g.key} title={g.title} aside={isCoach ? <Button small onClick={() => setGuide({ key: g.key, title: g.title, body: g.body })}>Edit</Button> : undefined}>
+                <RichText text={g.body} className="text-sm" />
+              </Panel>
+            ))}
+          </div>
         </div>
       )}
 
       <Modal open={!!service} onClose={() => setService(null)} title={service ? `Edit ${service.name}` : ""} wide>{service && <ServiceEditor s={service} onClose={() => setService(null)} />}</Modal>
       <Modal open={!!sheet} onClose={() => setSheet(null)} title={sheet?.title ?? ""} wide>{sheet && <WorksheetEditor w={sheet} canEdit={isCoach} onClose={() => setSheet(null)} />}</Modal>
+      <Modal open={adding === "service"} onClose={() => setAdding(null)} title="Add a service" wide>{adding === "service" && <AddService onClose={() => setAdding(null)} />}</Modal>
+      <Modal open={adding === "page"} onClose={() => setAdding(null)} title="Add a workbook page" wide>{adding === "page" && <AddWorksheet onClose={() => setAdding(null)} />}</Modal>
+      <Modal open={adding === "template"} onClose={() => setAdding(null)} title="Add a message template" wide>{adding === "template" && <AddTemplate onClose={() => setAdding(null)} />}</Modal>
+      <Modal open={guide !== null} onClose={() => setGuide(null)} title={guide === "new" ? "Add a guide" : "Edit guide"} wide>{guide !== null && <GuideEditor guide={guide === "new" ? null : guide} onClose={() => setGuide(null)} />}</Modal>
       <Modal open={!!template} onClose={() => setTemplate(null)} title={template?.name ?? ""} wide>{template && <TemplateEditor t={template} canEdit={isCoach} onClose={() => setTemplate(null)} />}</Modal>
     </div>
   );

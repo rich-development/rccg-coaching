@@ -6,8 +6,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Badge, Button, Empty, Field, Input, Loading, Modal, PageTitle, Select, TextArea, useAct } from "@/components/ui";
+import { Badge, Button, Empty, Field, Input, Loading, Modal, PageTitle, Select, useAct } from "@/components/ui";
+import { Composer, countBlanks, RichText } from "@/components/rich";
 import { ago, dateTime, todayIso } from "@/lib/format";
+import { fillTemplate } from "@/lib/merge";
 
 const statusLabel = { needs_reply: "Needs reply", waiting_on_client: "Waiting on client", resolved: "Resolved" } as const;
 const statusTone = { needs_reply: "clay", waiting_on_client: "gold", resolved: "moss" } as const;
@@ -57,7 +59,7 @@ function Thread({ clientId }: { clientId: Id<"clients"> }) {
           <div key={m._id} className={`flex ${m.from === "coach" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] rounded-lg px-3.5 py-2.5 text-sm ${m.from === "coach" ? "bg-pine-50" : "border border-line bg-gold-50"}`}>
               {m.ref && <div className="mb-1 text-xs text-gold-700">About: {m.ref.label}</div>}
-              <div className="whitespace-pre-wrap">{m.body}</div>
+              <RichText text={m.body} />
               <div className="mt-1.5 flex items-center gap-3 text-xs text-soft">
                 <span>{m.authorName}, {dateTime(m.createdAt)}</span>
                 {m.from === "client" && (
@@ -78,18 +80,20 @@ function Thread({ clientId }: { clientId: Id<"clients"> }) {
           if (await act(() => send({ clientId, body }), "Message sent")) setBody("");
         }}
       >
-        <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-[13px] text-soft">Start from a template:</span>
           {(templates ?? []).map((t) => (
-            <button key={t._id} type="button" className="rounded-full border border-line px-2.5 py-0.5 text-[13px] hover:bg-mist" onClick={() => setBody(t.body.replace(/\[Name\]/g, first))}>
+            <button key={t._id} type="button" className="rounded-full border border-line px-2.5 py-0.5 text-[13px] hover:bg-mist" onClick={() => setBody(fillTemplate(t.body, first, data.merge))}>
               {t.name}
             </button>
           ))}
         </div>
-        <TextArea value={body} onChange={(e) => setBody(e.target.value)} maxLength={6000} placeholder={`Write to ${first}`} aria-label="Message" />
+        <Composer value={body} onChange={setBody} placeholder={`Write to ${first}`} label="Message" />
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <Button type="submit" tone="primary" disabled={busy || !body.trim()}>Send message</Button>
-          <span className="text-[13px] text-soft">Templates are drafts. Fill in every [bracket] before sending. A message with a bracket left in will not send.</span>
+          <Button type="submit" tone="primary" disabled={busy || !body.trim() || countBlanks(body) > 0}>Send message</Button>
+          <span className="text-[13px] text-soft">
+            {countBlanks(body) > 0 ? "Fill in or remove each highlighted blank to send." : "Templates fill in what her record already knows."}
+          </span>
         </div>
       </form>
       <Modal open={!!task} onClose={() => setTask(null)} title="Make this a task">

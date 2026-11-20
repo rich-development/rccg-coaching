@@ -107,12 +107,13 @@ export default function ClientsPage() {
         </div>
       )}
 
-      <Modal open={adding} onClose={() => setAdding(false)} title="Add a person" wide>
-        <p className="mb-4 text-sm text-soft">She starts as an inquiry. Nothing is sent to her, and she cannot sign in until you turn on her portal.</p>
+      <Modal open={adding} onClose={() => setAdding(false)} title="Add a person">
+        <p className="mb-4 text-sm text-soft">Name and email are all you need. Her intake form fills in the rest when she completes it. Nothing is sent to her until you invite her.</p>
         <ClientForm
           busy={busy}
           saveLabel="Add to records"
           showPrivate={isCoach}
+          compact
           onSave={async (values) => {
             let id: string | undefined;
             const ok = await act(async () => {

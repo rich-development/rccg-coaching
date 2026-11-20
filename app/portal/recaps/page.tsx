@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Badge, Empty, Loading } from "@/components/ui";
+import { RichText } from "@/components/rich";
 import { dayLabel, isoLabel } from "@/lib/format";
 
 export default function PortalRecaps() {
@@ -24,7 +25,7 @@ export default function PortalRecaps() {
               <h2 className="text-[1.2rem]">Session {r.number}</h2>
               <p className="text-sm text-soft">{dayLabel(r.scheduledAt)}</p>
               {r.priority && <p className="mt-3 text-sm"><span className="text-soft">We focused on:</span> {r.priority}</p>}
-              {r.recap ? <p className="mt-3 whitespace-pre-wrap leading-relaxed">{r.recap}</p> : <p className="mt-3 text-sm text-soft">Tamika is still writing this recap.</p>}
+              {r.recap ? <RichText text={r.recap} className="mt-3 leading-relaxed" /> : <p className="mt-3 text-sm text-soft">Tamika is still writing this recap.</p>}
               {r.actions.length > 0 && (
                 <ul className="mt-4 space-y-1.5 border-t border-line pt-3 text-sm">
                   {r.actions.map((a) => (

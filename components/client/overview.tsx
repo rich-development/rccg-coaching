@@ -5,8 +5,9 @@ import { useState } from "react";
 import { api } from "@/convex/_generated/api";
 import { AccessBadge, AccessControls } from "@/components/access-controls";
 import { ClientForm } from "@/components/client/client-form";
+import { ClientFiles } from "@/components/files";
 import { useCan } from "@/components/role";
-import { Button, Field, Input, KeyValue, Modal, Panel, SafeLink, Select, useAct, Visibility } from "@/components/ui";
+import { Button, Field, Input, KeyValue, Modal, Panel, SafeLink, Select, useAct } from "@/components/ui";
 import { downloadFile, isoLabel, PIPELINE, shortDate, STAGE_LABEL, todayIso } from "@/lib/format";
 import type { Detail } from "./types";
 
@@ -30,6 +31,7 @@ export function Overview({ data, isCoach }: { data: Detail; isCoach: boolean }) 
     <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
       <div className="space-y-5">
         <Panel title="About her" aside={<Button small onClick={() => setEditing(true)}>Edit</Button>}>
+          {c.intakeAppliedAt ? <p className="mb-2 text-[13px] text-soft">Filled in from her intake on {shortDate(c.intakeAppliedAt)}. Edit anything she got wrong.</p> : <p className="mb-2 text-[13px] text-soft">Most of this fills in on its own when she completes intake.</p>}
           <dl>
             <KeyValue label="Preferred name">{c.preferredName}</KeyValue>
             <KeyValue label="Email">{c.email}</KeyValue>
@@ -39,6 +41,7 @@ export function Overview({ data, isCoach }: { data: Detail; isCoach: boolean }) 
             <KeyValue label="Where she is">{c.stage ? STAGE_LABEL[c.stage] : ""}</KeyValue>
             <KeyValue label="Goals">{c.goals}</KeyValue>
             <KeyValue label="Constraints">{c.constraints}</KeyValue>
+            <KeyValue label="Hours a week">{c.hoursPerWeek !== undefined ? String(c.hoursPerWeek) : ""}</KeyValue>
             <KeyValue label="Communication">{c.communicationPrefs}</KeyValue>
             <KeyValue label="Accessibility">{c.accessibility}</KeyValue>
             <KeyValue label="Found you through">{c.source}</KeyValue>
@@ -54,6 +57,16 @@ export function Overview({ data, isCoach }: { data: Detail; isCoach: boolean }) 
             <KeyValue label="Recommended">{recommended ? `${recommended.name}. ${c.recommendationReason ?? ""}` : ""}</KeyValue>
             <KeyValue label="Decision">{c.decisionNote ?? c.referralNote}</KeyValue>
           </dl>
+          {recommended && c.email && (
+            <a
+              className="mt-3 inline-block text-sm text-pine underline underline-offset-2"
+              href={`mailto:${c.email}?subject=${encodeURIComponent(`Your coaching details: ${recommended.name}`)}&body=${encodeURIComponent(
+                `Hi ${c.preferredName},\n\nThank you for talking with me. Here are the details we discussed.\n\n${recommended.name}\n${recommended.description}\n\nPrice: ${recommended.priceNote}\nSessions: ${recommended.sessionsIncluded}, ${recommended.sessionMinutes} minutes each\nBetween sessions: ${recommended.supportTerms}\n\n${c.recommendationReason ? `Why I suggest it: ${c.recommendationReason}\n\n` : ""}Reply to this email if you want to move forward or have questions.\n`,
+              )}`}
+            >
+              Send written details by email
+            </a>
+          )}
         </Panel>
       </div>
 
@@ -109,20 +122,15 @@ export function Overview({ data, isCoach }: { data: Detail; isCoach: boolean }) 
           </Field>
         </Panel>
 
-        <Panel title="Folders">
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between gap-2">
-              {c.sharedFolderUrl ? <SafeLink href={c.sharedFolderUrl}>Client shared folder</SafeLink> : <span className="text-soft">No shared folder linked</span>}
-              <Visibility who="shared" />
+        <ClientFiles clientId={c._id} clientName={c.preferredName} />
+        {(c.sharedFolderUrl || privateFolder) && (
+          <Panel title="Linked folders">
+            <div className="space-y-1.5 text-sm">
+              {c.sharedFolderUrl && <SafeLink href={c.sharedFolderUrl} className="block">Client shared folder</SafeLink>}
+              {isCoach && privateFolder && <SafeLink href={privateFolder} className="block">Private coach folder</SafeLink>}
             </div>
-            {isCoach && (
-              <div className="flex items-center justify-between gap-2">
-                {privateFolder ? <SafeLink href={privateFolder}>Private coach folder</SafeLink> : <span className="text-soft">No private folder linked</span>}
-                <Visibility who="private" />
-              </div>
-            )}
-          </div>
-        </Panel>
+          </Panel>
+        )}
 
         <Panel title="Client portal" aside={<AccessBadge state={c.access} invitationSent={!!c.inviteSentAt} />}>
           <p className="mb-3 text-[13px] text-soft">
