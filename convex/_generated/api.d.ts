@@ -45,19 +45,19 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  "access": typeof access;
-  "actions": typeof actions;
-  "ai": typeof ai;
-  "assessments": typeof assessments;
-  "automation": typeof automation;
-  "briefs": typeof briefs;
-  "clients": typeof clients;
-  "coworking": typeof coworking;
-  "crons": typeof crons;
-  "dashboard": typeof dashboard;
-  "engagements": typeof engagements;
-  "feedback": typeof feedback;
-  "files": typeof files;
+  access: typeof access;
+  actions: typeof actions;
+  ai: typeof ai;
+  assessments: typeof assessments;
+  automation: typeof automation;
+  briefs: typeof briefs;
+  clients: typeof clients;
+  coworking: typeof coworking;
+  crons: typeof crons;
+  dashboard: typeof dashboard;
+  engagements: typeof engagements;
+  feedback: typeof feedback;
+  files: typeof files;
   "lib/agreement": typeof lib_agreement;
   "lib/auth": typeof lib_auth;
   "lib/automation": typeof lib_automation;
@@ -65,23 +65,41 @@ declare const fullApi: ApiFromModules<{
   "lib/clerk": typeof lib_clerk;
   "lib/defaults": typeof lib_defaults;
   "lib/threads": typeof lib_threads;
-  "library": typeof library;
-  "messages": typeof messages;
-  "portal": typeof portal;
-  "reports": typeof reports;
-  "seed": typeof seed;
-  "sessions": typeof sessions;
-  "settings": typeof settings;
-  "users": typeof users;
-  "worksheets": typeof worksheets;
+  library: typeof library;
+  messages: typeof messages;
+  portal: typeof portal;
+  reports: typeof reports;
+  seed: typeof seed;
+  sessions: typeof sessions;
+  settings: typeof settings;
+  users: typeof users;
+  worksheets: typeof worksheets;
 }>;
 
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 export declare const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
 >;
 
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
 export declare const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">
 >;
+
+export declare const components: {};
